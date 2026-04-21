@@ -1,0 +1,20 @@
+{
+  "name": "ts3-music-bot",
+  "version": "1.0.0",
+  "description": "Self-hosted TeamSpeak 3 Music Bot — Web UI & Backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^9.4.3",
+    "connect-sqlite3": "^0.9.14",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.7.4",
+    "uuid": "^9.0.1"
+  }
+}

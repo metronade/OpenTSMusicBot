@@ -1,0 +1,17 @@
+# Dependencies
+app/node_modules/
+
+# Runtime data
+music/
+config/
+identities/
+
+# Environment
+.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

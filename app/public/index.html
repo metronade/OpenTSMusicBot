@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TS3 Music Bot</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+<!-- ── LOGIN OVERLAY ─────────────────────────────────────────────────────── -->
+<div id="login-overlay" class="overlay">
+  <div class="login-box">
+    <h1>TS3 Music Bot</h1>
+    <form id="login-form">
+      <input  id="login-username" type="text"     placeholder="Username" autocomplete="username" required />
+      <input  id="login-password" type="password" placeholder="Password" autocomplete="current-password" required />
+      <button type="submit">Login</button>
+      <p id="login-error" class="error hidden"></p>
+    </form>
+  </div>
+</div>
+
+<!-- ── CHANGE PASSWORD OVERLAY ───────────────────────────────────────────── -->
+<div id="changepw-overlay" class="overlay hidden">
+  <div class="login-box">
+    <h1>Change Password</h1>
+    <p class="subtitle">Your account requires a new password before continuing.</p>
+    <form id="changepw-form">
+      <input id="cp-current"  type="password" placeholder="Current password" required />
+      <input id="cp-new"      type="password" placeholder="New password (min 6 chars)" required />
+      <input id="cp-confirm"  type="password" placeholder="Confirm new password" required />
+      <button type="submit">Update Password</button>
+      <p id="cp-error" class="error hidden"></p>
+    </form>
+  </div>
+</div>
+
+<!-- ── MAIN APP ───────────────────────────────────────────────────────────── -->
+<div id="app" class="hidden">
+
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <div class="logo">🎵 TS3 Bot</div>
+    <ul>
+      <li><a href="#" data-page="dashboard"  class="active">Dashboard</a></li>
+      <li><a href="#" data-page="library">Library</a></li>
+      <li><a href="#" data-page="playlists">Playlists</a></li>
+      <li><a href="#" data-page="settings" id="nav-settings" class="admin-only hidden">Settings</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <span id="sidebar-user"></span>
+      <button id="logout-btn">Logout</button>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <main id="main">
+
+    <!-- ── DASHBOARD ──────────────────────────────────────────────────────── -->
+    <section id="page-dashboard" class="page active">
+      <h2>Dashboard</h2>
+
+      <div class="card-grid">
+        <!-- Status -->
+        <div class="card">
+          <div class="card-title">Bot Status</div>
+          <div id="bot-status-badge" class="badge badge-offline">Offline</div>
+          <div class="controls-row" style="margin-top:.75rem">
+            <button id="btn-connect"    class="btn btn-sm">Connect</button>
+            <button id="btn-disconnect" class="btn btn-sm btn-danger">Disconnect</button>
+            <button id="btn-reconnect"  class="btn btn-sm">Reconnect</button>
+          </div>
+        </div>
+
+        <!-- Now Playing -->
+        <div class="card span-2">
+          <div class="card-title">Now Playing</div>
+          <div id="now-playing-title" class="now-playing-title">— idle —</div>
+          <div id="now-playing-type"  class="now-playing-type"></div>
+          <div id="progress-bar-wrap" class="progress-wrap hidden">
+            <span id="progress-time" class="progress-time">0:00</span>
+            <input id="progress-seek" type="range" min="0" max="100" value="0" step="1" class="seek-slider" />
+            <span id="progress-duration" class="progress-time">0:00</span>
+          </div>
+          <div class="controls-row">
+            <button id="btn-stop" class="btn btn-danger">⏹ Stop</button>
+            <label id="loop-label" class="loop-label hidden">
+              <input id="loop-checkbox" type="checkbox" />
+              🔁 Loop
+            </label>
+          </div>
+        </div>
+
+        <!-- Volume -->
+        <div class="card">
+          <div class="card-title">Volume</div>
+          <div class="vol-row">
+            <input  id="vol-slider" type="range" min="0" max="100" value="80" />
+            <span   id="vol-label">80%</span>
+          </div>
+        </div>
+
+        <!-- Quick Play -->
+        <div class="card">
+          <div class="card-title">Quick Play (file)</div>
+          <div class="input-row autocomplete-wrap">
+            <div class="autocomplete-container">
+              <input id="quick-play-name" type="text" placeholder="Song name…" autocomplete="off" />
+              <div id="autocomplete-dropdown" class="autocomplete-dropdown hidden"></div>
+            </div>
+            <button id="quick-play-btn"  class="btn">▶</button>
+            <button id="quick-queue-btn" class="btn btn-secondary" title="Add to queue">+Q</button>
+          </div>
+        </div>
+
+        <!-- YouTube Play -->
+        <div class="card">
+          <div class="card-title">YouTube Stream</div>
+          <div class="input-row">
+            <input  id="yt-url"  type="text" placeholder="YouTube URL" />
+            <button id="yt-play-btn"  class="btn">▶</button>
+            <button id="yt-queue-btn" class="btn btn-secondary" title="Add to queue">+Q</button>
+          </div>
+        </div>
+
+        <!-- Channel Move -->
+        <div class="card">
+          <div class="card-title">Channel</div>
+          <div class="input-row">
+            <select id="channel-select">
+              <option value="">— select channel —</option>
+            </select>
+            <button id="channel-move-btn" class="btn">Move</button>
+          </div>
+        </div>
+
+        <!-- Nickname -->
+        <div class="card">
+          <div class="card-title">Nickname</div>
+          <div class="input-row">
+            <input  id="nickname-input" type="text" placeholder="New nickname" maxlength="30" />
+            <button id="nickname-btn"   class="btn">Set</button>
+          </div>
+        </div>
+
+        <!-- Text to Speech -->
+        <div class="card">
+          <div class="card-title">Text to Speech</div>
+          <div class="input-row" style="margin-bottom:.5rem">
+            <select id="tts-voice" style="flex:none;width:auto">
+              <option value="thorsten">Thorsten</option>
+              <option value="kerstin">Kerstin</option>
+            </select>
+          </div>
+          <div class="input-row">
+            <input id="tts-text" type="text" placeholder="Text eingeben…" maxlength="300" />
+            <button id="tts-btn" class="btn">🔊 Say</button>
+          </div>
+        </div>
+
+        <!-- Queue -->
+        <div class="card span-2" id="queue-card">
+          <div class="card-title">Queue <span id="queue-count" class="text-muted"></span></div>
+          <ul id="queue-list" class="queue-list">
+            <li class="empty-msg" id="queue-empty">Queue is empty.</li>
+          </ul>
+        </div>
+
+        <!-- History -->
+        <div class="card" id="history-card">
+          <div class="card-title">Recent Plays</div>
+          <ul id="history-list" class="history-list">
+            <li class="empty-msg">No history yet.</li>
+          </ul>
+        </div>
+
+      </div><!-- /card-grid -->
+    </section>
+
+    <!-- ── LIBRARY ─────────────────────────────────────────────────────────── -->
+    <section id="page-library" class="page hidden">
+      <h2>Music Library</h2>
+
+      <div class="card upload-card">
+        <div class="card-title">Upload Audio</div>
+        <div class="upload-zone" id="drop-zone">
+          <p>Drop audio files here or <label for="file-input" class="link">browse</label></p>
+          <p class="subtitle">mp3 · ogg · wav · flac · m4a — max 50 MB</p>
+          <input id="file-input" type="file" accept="audio/*" multiple hidden />
+        </div>
+        <div id="upload-progress" class="hidden">
+          <progress id="upload-bar" max="100" value="0"></progress>
+          <span id="upload-status"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Files
+          <input id="lib-search" type="search" placeholder="Search…" style="float:right;width:180px" />
+        </div>
+        <table id="lib-table">
+          <thead><tr><th>Name</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
+          <tbody id="lib-tbody"></tbody>
+        </table>
+        <p id="lib-empty" class="empty-msg">No files uploaded yet.</p>
+      </div>
+    </section>
+
+    <!-- ── PLAYLISTS ───────────────────────────────────────────────────────── -->
+    <section id="page-playlists" class="page hidden">
+      <h2>Playlists</h2>
+      <div class="two-col">
+
+        <div class="card">
+          <div class="card-title">My Playlists</div>
+          <div class="input-row">
+            <input  id="new-pl-name" type="text" placeholder="New playlist name" />
+            <button id="new-pl-btn"  class="btn">Create</button>
+          </div>
+          <ul id="pl-list" class="pl-list"></ul>
+        </div>
+
+        <div class="card" id="pl-editor" style="display:none">
+          <div class="card-title">
+            Editing: <span id="pl-editor-name"></span>
+            <button id="pl-delete-btn" class="btn btn-danger btn-sm" style="float:right">Delete</button>
+          </div>
+          <div class="input-row">
+            <select id="pl-add-file-select">
+              <option value="">— add file —</option>
+            </select>
+            <button id="pl-add-file-btn" class="btn">Add</button>
+          </div>
+          <ul id="pl-editor-files" class="pl-file-list"></ul>
+          <div class="controls-row">
+            <button id="pl-play-btn" class="btn">▶ Play Playlist</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── SETTINGS (admin) ────────────────────────────────────────────────── -->
+    <section id="page-settings" class="page hidden">
+      <h2>Settings</h2>
+
+      <div class="card">
+        <div class="card-title">User Management</div>
+        <table id="users-table">
+          <thead><tr><th>Username</th><th>Role</th><th></th></tr></thead>
+          <tbody id="users-tbody"></tbody>
+        </table>
+        <hr />
+        <div class="card-title">Create User</div>
+        <form id="create-user-form" class="inline-form">
+          <input  id="new-username" type="text"     placeholder="Username" required />
+          <input  id="new-password" type="password" placeholder="Password" required />
+          <select id="new-role">
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+          <button type="submit" class="btn">Create</button>
+        </form>
+        <p id="create-user-error" class="error hidden"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Chat Feedback</div>
+        <p class="subtitle">Toggle which bot actions send a reply in the TS3 channel.</p>
+        <div id="chat-feedback-toggles" class="toggle-grid"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Bot Identity</div>
+        <p class="subtitle">Upload an existing <code>identity.ini</code> exported from the TS3 client.<br>
+           The TS3 container must be restarted after upload.</p>
+        <form id="identity-form" class="inline-form">
+          <input  id="identity-file-input" type="file" accept=".ini,.ts3_identity" />
+          <button type="submit" class="btn">Upload Identity</button>
+        </form>
+        <p id="identity-status" class="hidden"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">TTS Event Announcements</div>
+        <p class="subtitle">Automatically announce users joining or leaving the bot's channel.</p>
+        <div id="tts-events-form">
+          <div class="tts-event-row" style="margin-bottom:.75rem">
+            <label>Stimme:
+              <select id="tts-events-voice" style="margin-left:.5rem">
+                <option value="thorsten">Thorsten</option>
+                <option value="kerstin">Kerstin</option>
+              </select>
+            </label>
+          </div>
+          <div class="tts-event-row">
+            <label><input type="checkbox" id="tts-join-enabled" /> User joins channel</label>
+            <input id="tts-join-text" type="text" placeholder="e.g. Hallo {username}" maxlength="200" style="width:100%;margin-top:.4rem" />
+          </div>
+          <div class="tts-event-row" style="margin-top:.75rem">
+            <label><input type="checkbox" id="tts-leave-enabled" /> User leaves channel</label>
+            <input id="tts-leave-text" type="text" placeholder="e.g. Tschüss {username}" maxlength="200" style="width:100%;margin-top:.4rem" />
+          </div>
+          <div class="controls-row" style="margin-top:.75rem">
+            <button id="tts-events-save-btn" class="btn">Save</button>
+            <span id="tts-events-msg" class="hidden" style="margin-left:.75rem;color:var(--green)">Saved.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">YouTube Cookies</div>
+        <p class="subtitle">
+          Required for YouTube streaming on server IPs.<br>
+          Export <code>cookies.txt</code> from your browser using the
+          <strong>„Get cookies.txt LOCALLY"</strong> extension while logged in to YouTube.
+        </p>
+        <div id="cookies-status-row" style="margin-bottom:10px"></div>
+        <div class="inline-form">
+          <input id="cookies-file-input" type="file" accept=".txt" />
+          <button id="cookies-upload-btn" class="btn">Upload cookies.txt</button>
+          <button id="cookies-delete-btn" class="btn btn-danger" style="display:none">Delete</button>
+        </div>
+        <p id="cookies-msg" class="hidden"></p>
+      </div>
+
+    </section>
+
+  </main>
+</div><!-- /#app -->
+
+<div id="toast-container"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

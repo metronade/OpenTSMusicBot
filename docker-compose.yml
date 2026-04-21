@@ -1,0 +1,61 @@
+services:
+  # ─────────────────────────────────────────────
+  # App  (Express API + Web UI + FFmpeg + yt-dlp)
+  # ─────────────────────────────────────────────
+  app:
+    build:
+      context: ./app
+    container_name: ts3bot_app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - ./music:/app/music
+      - ./identities:/app/identities
+      - ./config:/app/config
+    environment:
+      NODE_ENV: production
+      SESSION_SECRET: ${SESSION_SECRET:-CHANGE_THIS_TO_A_STRONG_RANDOM_SECRET}
+      TS3_QUERY_HOST: ts3client
+      TS3_QUERY_PORT: 25640
+      TS3_QUERY_APIKEY: TS3B-OTMU-SIC0-BOTK-EY00-0001
+      PULSE_SERVER: tcp:ts3client:4713
+      MUSIC_DIR: /app/music
+      DB_PATH: /app/config/db.sqlite
+    depends_on:
+      - ts3client
+    networks:
+      - ts3bot_net
+
+  # ─────────────────────────────────────────────
+  # TS3 Client  (Xvfb + PulseAudio + TS3 client)
+  # ─────────────────────────────────────────────
+  ts3client:
+    build:
+      context: ./ts3client
+    container_name: ts3bot_ts3
+    restart: unless-stopped
+    expose:
+      - "25640"   # ClientQuery plugin (socat bridge from 127.0.0.1:25639)
+      - "4713"    # PulseAudio TCP
+    volumes:
+      - ./identities:/identities:ro
+      - ./config:/config
+      - ./ts3client/clientquery_plugin.ini:/home/ts3bot/.ts3client/plugins/clientquery_plugin.ini:ro
+      - ./ts3client/clientquery.ini:/home/ts3bot/.ts3client/clientquery.ini:ro
+    environment:
+      TS3_SERVER: ${TS3_SERVER:-}
+      TS3_PORT: ${TS3_PORT:-9987}
+      TS3_PASSWORD: ${TS3_PASSWORD:-}
+      TS3_NICKNAME: ${TS3_NICKNAME:-MusicBot}
+      TS3_CHANNEL: ${TS3_CHANNEL:-}
+      ACCEPT_EULA: "1"
+    cap_add:
+      - SYS_NICE
+    shm_size: 256m
+    networks:
+      - ts3bot_net
+
+networks:
+  ts3bot_net:
+    driver: bridge
