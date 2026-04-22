@@ -76,6 +76,10 @@ class AudioManager extends EventEmitter {
     this._elapsed    = seekTo;
     this._seekOffset = seekTo;
 
+    const effectiveDur = this._duration ? this._duration - seekTo : null;
+    const needsPad     = effectiveDur !== null && effectiveDur < 2;
+    const audioFilter  = `volume=${this.volume / 100}${needsPad ? ',apad=pad_dur=1' : ''}`;
+
     const args = [
       ...(seekTo > 0 ? ['-ss', String(seekTo)] : []),
       '-re',
@@ -83,7 +87,7 @@ class AudioManager extends EventEmitter {
       '-vn',
       '-ac', '2',
       '-ar', '48000',
-      '-af', `volume=${this.volume / 100}`,
+      '-af', audioFilter,
       '-f', 'pulse',
       config.PULSE_SINK,
     ];
@@ -259,11 +263,15 @@ class AudioManager extends EventEmitter {
 
     let args;
     if (track.type === 'file' && track.path) {
+      const remaining    = this._duration ? this._duration - sec : null;
+      const needsPad     = remaining !== null && remaining < 2;
+      const audioFilter  = `volume=${this.volume / 100}${needsPad ? ',apad=pad_dur=1' : ''}`;
+
       args = [
         '-re', '-ss', String(sec),
         '-i', track.path,
         '-vn', '-ac', '2', '-ar', '48000',
-        '-af', `volume=${this.volume / 100}`,
+        '-af', audioFilter,
         '-f', 'pulse', config.PULSE_SINK,
       ];
     } else if (track.type === 'youtube' && track.streamUrl) {
