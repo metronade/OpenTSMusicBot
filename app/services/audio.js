@@ -78,7 +78,7 @@ class AudioManager extends EventEmitter {
 
     const effectiveDur = this._duration ? this._duration - seekTo : null;
     const needsPad     = effectiveDur !== null && effectiveDur < 2;
-    const audioFilter  = `asetpts=N/SR,volume=${this.volume / 100}${needsPad ? ',apad=pad_dur=1' : ''}`;
+    const audioFilter  = `volume=${this.volume / 100}${needsPad ? ',apad=pad_dur=1' : ''}`;
 
     const args = [
       ...(seekTo > 0 ? ['-ss', String(seekTo)] : []),
@@ -162,7 +162,7 @@ class AudioManager extends EventEmitter {
           '-vn',
           '-ac', '2',
           '-ar', '48000',
-          '-af', `asetpts=N/SR,volume=${this.volume / 100}`,
+          '-af', `volume=${this.volume / 100}`,
           '-f', 'pulse',
           config.PULSE_SINK,
         ];
@@ -265,7 +265,7 @@ class AudioManager extends EventEmitter {
     if (track.type === 'file' && track.path) {
       const remaining    = this._duration ? this._duration - sec : null;
       const needsPad     = remaining !== null && remaining < 2;
-      const audioFilter  = `asetpts=N/SR,volume=${this.volume / 100}${needsPad ? ',apad=pad_dur=1' : ''}`;
+      const audioFilter  = `volume=${this.volume / 100}${needsPad ? ',apad=pad_dur=1' : ''}`;
 
       args = [
         '-re', '-ss', String(sec),
@@ -281,7 +281,7 @@ class AudioManager extends EventEmitter {
         '-ss', String(sec),
         '-i', track.streamUrl,
         '-vn', '-ac', '2', '-ar', '48000',
-        '-af', `asetpts=N/SR,volume=${this.volume / 100}`,
+        '-af', `volume=${this.volume / 100}`,
         '-f', 'pulse', config.PULSE_SINK,
       ];
     } else {

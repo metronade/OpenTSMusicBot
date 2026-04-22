@@ -54,7 +54,7 @@ load-module module-stream-restore
 load-module module-card-restore
 
 # Null sink — FFmpeg writes here from the app container
-load-module module-null-sink sink_name=virtual_out sink_properties=device.description="TS3MusicBot_Output" rate=48000 channels=2
+load-module module-null-sink sink_name=virtual_out sink_properties=device.description="TS3MusicBot_Output" rate=48000 channels=2 latency_msec=2000
 
 # Discard sink — TS3 client plays incoming server audio here (prevents echo).
 # Without this, TS3 would play to virtual_out (the default), and virtual_mic
