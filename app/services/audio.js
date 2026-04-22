@@ -152,6 +152,8 @@ class AudioManager extends EventEmitter {
         this._duration = (durStr && durStr !== 'NA') ? parseFloat(durStr) || null : null;
 
         const ffmpegArgs = [
+          '-re',
+          '-thread_queue_size', '512',
           '-i', streamUrl,
           '-vn',
           '-ac', '2',
@@ -266,6 +268,8 @@ class AudioManager extends EventEmitter {
       ];
     } else if (track.type === 'youtube' && track.streamUrl) {
       args = [
+        '-re',
+        '-thread_queue_size', '512',
         '-ss', String(sec),
         '-i', track.streamUrl,
         '-vn', '-ac', '2', '-ar', '48000',
@@ -399,7 +403,8 @@ class AudioManager extends EventEmitter {
       this.emit('error', err);
     });
 
-    this._ffmpeg.on('close', () => {
+    this._ffmpeg.on('close', (code, signal) => {
+      console.log(`[FFmpeg] process exited code=${code ?? 'none'} signal=${signal ?? 'none'} track=${this.track?.title ?? 'none'}`);
       const wasTrack   = this.track;
       this._ffmpeg     = null;
       this._ytdlp      = null;
