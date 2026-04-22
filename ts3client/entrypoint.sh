@@ -53,16 +53,17 @@ load-module module-device-restore
 load-module module-stream-restore
 load-module module-card-restore
 
-# Virtual microphone with uplink sink — FFmpeg writes to virtual_out,
-# data flows directly to virtual_mic source (no null-sink monitor race).
-# This replaces the old null-sink + monitor + virtual-source chain that
-# lost data because the null-sink consumed it before the monitor could read it.
-load-module module-virtual-source source_name=virtual_mic uplink_sink=virtual_out source_properties=device.description="TS3MusicBot_Mic" rate=48000 channels=2
+# Null sink — FFmpeg writes here from the app container
+load-module module-null-sink sink_name=virtual_out sink_properties=device.description="TS3MusicBot_Output" rate=48000 channels=2
 
 # Discard sink — TS3 client plays incoming server audio here (prevents echo).
 # Without this, TS3 would play to virtual_out (the default), and virtual_mic
 # would loop it back to the server as the bot's own microphone input.
 load-module module-null-sink sink_name=ts3_discard sink_properties=device.description="TS3_Playback_Discard"
+
+# Virtual microphone — TS3 client captures from here (monitors virtual_out only).
+# Because TS3's playback goes to ts3_discard, only FFmpeg output ends up here.
+load-module module-virtual-source source_name=virtual_mic master=virtual_out.monitor source_properties=device.description="TS3MusicBot_Mic"
 
 # Unix socket — libpulse default discovery checks this path first.
 # Without it, libpulse gets ENOENT on both socket candidates and
