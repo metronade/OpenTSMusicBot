@@ -29,7 +29,8 @@ mkdir -p "$HOME/.config/pulse"
 mkdir -p /tmp/runtime-ts3bot/pulse
 chmod 700 /tmp/runtime-ts3bot
 
-# daemon.conf: disable idle-exit and RT scheduling (RT fails in containers)
+# daemon.conf: disable idle-exit and RT scheduling (RT fails in containers).
+# Larger fragments prevent buffer underflows in TS3's audio subsystem.
 cat > "$HOME/.config/pulse/daemon.conf" << 'EOF'
 exit-idle-time = -1
 allow-exit = no
@@ -38,6 +39,8 @@ realtime-scheduling = no
 high-priority = no
 nice-level = 0
 rlimit-memlock = 0
+default-fragments = 4
+default-fragment-size-msec = 25
 EOF
 
 # client.conf: disable autospawn so libpulse (TS3) never tries to start a
@@ -212,6 +215,22 @@ voiceactivation_level=-40
 agc=false
 vad_over_ptt=false
 vad_mode=0');
+
+-- Playback profile: route TS3 playback directly to ts3_discard instead of
+-- relying on the runtime pactl move-sink-input workaround (section 7f).
+-- Without this, TS3 uses a "ts.pa.dummy.playbackdefault" device that causes
+-- constant buffer underflows, destabilising the entire audio thread.
+INSERT OR REPLACE INTO Profiles(timestamp, key, value)
+    VALUES (strftime('%s','now'), 'DefaultPlaybackProfile', 'Default');
+INSERT OR REPLACE INTO Profiles(timestamp, key, value)
+    VALUES (strftime('%s','now'), 'Playback/', '');
+INSERT OR REPLACE INTO Profiles(timestamp, key, value)
+    VALUES (strftime('%s','now'), 'Playback//', '');
+INSERT OR REPLACE INTO Profiles(timestamp, key, value)
+    VALUES (strftime('%s','now'), 'Playback/Default', 'Mode=
+Device=ts3_discard
+DeviceDisplayName=TS3_Playback_Discard
+');
 SQL
 }
 init_settings_db
@@ -386,8 +405,13 @@ voiceactivation_level=-40
 agc=false
 vad_over_ptt=false
 vad_mode=0');
+        INSERT OR REPLACE INTO Profiles(timestamp,key,value) VALUES(strftime('%s','now'),'DefaultPlaybackProfile','Default');
+        INSERT OR REPLACE INTO Profiles(timestamp,key,value) VALUES(strftime('%s','now'),'Playback/Default','Mode=
+Device=ts3_discard
+DeviceDisplayName=TS3_Playback_Discard
+');
     " 2>/dev/null
-    echo "[TS3] Capture profile re-patched"
+    echo "[TS3] Capture+Playback profiles re-patched"
 
     # Wait for identity/myTeamSpeak dialogs to be dismissed (7e) before dumping,
     # so we capture the DB state AFTER TS3 has written the new identity.
