@@ -108,15 +108,14 @@ for i in $(seq 1 30); do
 done
 echo "[PA] virtual_mic source ready"
 
-# Set virtual_out.monitor as the default source so TS3 picks it up automatically.
-# Using the monitor directly bypasses module-virtual-source for more reliable audio.
-pactl set-default-source virtual_out.monitor 2>/dev/null || true
+# Set virtual_mic as the default source so TS3 picks it up automatically
+pactl set-default-source virtual_mic 2>/dev/null || true
 
 # Keep virtual_out as the PA default sink so FFmpeg (remote TCP client)
 # always lands on the right sink without explicit name resolution.
 # TS3's playback output is redirected to ts3_discard AFTER TS3 starts
 # (see section 7f below) using pactl move-sink-input.
-echo "[PA] PulseAudio ready — default_sink=virtual_out, ts3_playback=ts3_discard (moved after TS3 start), source=virtual_out.monitor"
+echo "[PA] PulseAudio ready — default_sink=virtual_out, ts3_playback=ts3_discard (moved after TS3 start), source=virtual_mic"
 
 # ── PA watchdog ─────────────────────────────────────────────────────────────
 # PulseAudio can crash in containers (e.g. after RT-scheduling failure or a
@@ -134,7 +133,7 @@ _pa_restart() {
                --log-level=warn &
     echo "[PA] Watchdog: PulseAudio restarted (PID $!)"
     sleep 5
-    pactl set-default-source virtual_out.monitor 2>/dev/null || true
+    pactl set-default-source virtual_mic 2>/dev/null || true
 }
 (
     set +e
@@ -204,7 +203,7 @@ INSERT OR REPLACE INTO Profiles(timestamp, key, value)
     VALUES (strftime('%s','now'), 'Capture//', '');
 INSERT OR REPLACE INTO Profiles(timestamp, key, value)
     VALUES (strftime('%s','now'), 'Capture/Default', 'Mode=
-Device=virtual_out.monitor
+Device=virtual_mic
 DeviceDisplayName=TS3MusicBot_Mic
 ');
 INSERT OR REPLACE INTO Profiles(timestamp, key, value)
@@ -316,9 +315,8 @@ export GALLIUM_DRIVER=softpipe
 # module-native-protocol-tcp only.  That failure causes a null-deref → SIGSEGV.
 export PULSE_SERVER=tcp:127.0.0.1:4713
 
-# PULSE_SOURCE points TS3 directly at the null-sink monitor, bypassing
-# module-virtual-source entirely (one less layer in the audio path).
-export PULSE_SOURCE=virtual_out.monitor
+# PULSE_SOURCE points TS3 at our virtual microphone
+export PULSE_SOURCE=virtual_mic
 
 # ── Workarounds for headless / Docker crashes ────────────────────────────────
 
@@ -724,6 +722,45 @@ DeviceDisplayName=TS3_Playback_Discard
 
     touch /tmp/ts3_identity_ready
     echo "[GUI] Identity import + default set + dialog closed — ready to connect"
+) &
+
+# ── 7e2. Force continuous transmission mode via TS3 UI ──────────────────────
+# Database capture profile settings (continous_transmission=true) are NOT
+# reliably read by TS3 — it falls back to VAD (Voice Activity Detection),
+# which stops transmitting after the initial audio burst.
+# This xdotool section forces the mode through the Self menu.
+(
+    set +e
+    # Wait for identity import to complete
+    for _w in $(seq 1 120); do
+        [[ -f /tmp/ts3_identity_ready ]] && break
+        sleep 0.5
+    done
+    sleep 5  # Let TS3 fully render its main window
+
+    WID=$(DISPLAY=:99 xdotool search --name "TeamSpeak" 2>/dev/null | tail -1)
+    if [[ -z "$WID" ]]; then
+        echo "[GUI] TS3 window not found — skipping capture mode"
+        exit 0
+    fi
+    DISPLAY=:99 xdotool windowfocus --sync "$WID" 2>/dev/null || true
+    sleep 0.5
+    scrot -d 0 /tmp/ts3_pre_capture.png 2>/dev/null || true
+
+    # Open Self menu via Alt+S
+    DISPLAY=:99 xdotool key alt+s 2>/dev/null || true
+    sleep 0.6
+    scrot -d 0 /tmp/ts3_self_menu.png 2>/dev/null || true
+
+    # Navigate to "Switch to Continuous Transmission":
+    # Self menu items: Set Away, (sep), Push-to-Talk, Voice Activation,
+    # Continuous Transmission → 4 Down presses from first item
+    DISPLAY=:99 xdotool key --repeat 4 --delay 100 Down 2>/dev/null || true
+    sleep 0.3
+    DISPLAY=:99 xdotool key Return 2>/dev/null || true
+    sleep 0.5
+    scrot -d 0 /tmp/ts3_post_capture.png 2>/dev/null || true
+    echo "[GUI] Set continuous transmission mode via Self menu"
 ) &
 
 # ── 7f. Continuously redirect TS3 playback to ts3_discard (anti-echo) ────────
