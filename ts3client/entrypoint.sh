@@ -108,14 +108,15 @@ for i in $(seq 1 30); do
 done
 echo "[PA] virtual_mic source ready"
 
-# Set virtual_mic as the default source so TS3 picks it up automatically
-pactl set-default-source virtual_mic 2>/dev/null || true
+# Set virtual_out.monitor as the default source so TS3 picks it up automatically.
+# Using the monitor directly bypasses module-virtual-source for more reliable audio.
+pactl set-default-source virtual_out.monitor 2>/dev/null || true
 
 # Keep virtual_out as the PA default sink so FFmpeg (remote TCP client)
 # always lands on the right sink without explicit name resolution.
 # TS3's playback output is redirected to ts3_discard AFTER TS3 starts
 # (see section 7f below) using pactl move-sink-input.
-echo "[PA] PulseAudio ready — default_sink=virtual_out, ts3_playback=ts3_discard (moved after TS3 start), source=virtual_mic"
+echo "[PA] PulseAudio ready — default_sink=virtual_out, ts3_playback=ts3_discard (moved after TS3 start), source=virtual_out.monitor"
 
 # ── PA watchdog ─────────────────────────────────────────────────────────────
 # PulseAudio can crash in containers (e.g. after RT-scheduling failure or a
@@ -133,7 +134,7 @@ _pa_restart() {
                --log-level=warn &
     echo "[PA] Watchdog: PulseAudio restarted (PID $!)"
     sleep 5
-    pactl set-default-source virtual_mic 2>/dev/null || true
+    pactl set-default-source virtual_out.monitor 2>/dev/null || true
 }
 (
     set +e
@@ -203,7 +204,7 @@ INSERT OR REPLACE INTO Profiles(timestamp, key, value)
     VALUES (strftime('%s','now'), 'Capture//', '');
 INSERT OR REPLACE INTO Profiles(timestamp, key, value)
     VALUES (strftime('%s','now'), 'Capture/Default', 'Mode=
-Device=virtual_mic
+Device=virtual_out.monitor
 DeviceDisplayName=TS3MusicBot_Mic
 ');
 INSERT OR REPLACE INTO Profiles(timestamp, key, value)
@@ -315,8 +316,9 @@ export GALLIUM_DRIVER=softpipe
 # module-native-protocol-tcp only.  That failure causes a null-deref → SIGSEGV.
 export PULSE_SERVER=tcp:127.0.0.1:4713
 
-# PULSE_SOURCE points TS3 at our virtual microphone
-export PULSE_SOURCE=virtual_mic
+# PULSE_SOURCE points TS3 directly at the null-sink monitor, bypassing
+# module-virtual-source entirely (one less layer in the audio path).
+export PULSE_SOURCE=virtual_out.monitor
 
 # ── Workarounds for headless / Docker crashes ────────────────────────────────
 
@@ -367,8 +369,7 @@ if [[ -n "$CONNECT_URL" ]]; then
 else
     echo "[TS3] No TS3_SERVER set — starting without auto-connect."
 fi
-strace -f -q -e trace=exit_group -e "signal=SIGSEGV,SIGABRT,SIGBUS,SIGILL,SIGFPE,SIGPIPE" \
-    ./ts3client_linux_amd64 2>&1 &
+./ts3client_linux_amd64 2>&1 &
 TS3_PID=$!
 
 # ── 7b. Re-patch General.LicenseVersion after TS3 recreates it ──────────────
@@ -395,7 +396,7 @@ TS3_PID=$!
     sqlite3 "$DB" "
         INSERT OR REPLACE INTO Profiles(timestamp,key,value) VALUES(strftime('%s','now'),'DefaultCaptureProfile','Default');
         INSERT OR REPLACE INTO Profiles(timestamp,key,value) VALUES(strftime('%s','now'),'Capture/Default','Mode=
-Device=virtual_mic
+Device=virtual_out.monitor
 DeviceDisplayName=TS3MusicBot_Mic
 ');
         INSERT OR REPLACE INTO Profiles(timestamp,key,value) VALUES(strftime('%s','now'),'Capture/Default/PreProcessing','denoise=false
