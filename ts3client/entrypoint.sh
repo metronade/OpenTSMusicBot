@@ -192,18 +192,18 @@ CREATE TABLE IF NOT EXISTS Profiles (
     value     VARCHAR
 );
 CREATE INDEX IF NOT EXISTS index_Profiles_key ON Profiles (key);
-INSERT OR IGNORE INTO Profiles(timestamp, key, value)
+INSERT OR REPLACE INTO Profiles(timestamp, key, value)
     VALUES (strftime('%s','now'), 'DefaultCaptureProfile', 'Default');
-INSERT OR IGNORE INTO Profiles(timestamp, key, value)
+INSERT OR REPLACE INTO Profiles(timestamp, key, value)
     VALUES (strftime('%s','now'), 'Capture/', '');
-INSERT OR IGNORE INTO Profiles(timestamp, key, value)
+INSERT OR REPLACE INTO Profiles(timestamp, key, value)
     VALUES (strftime('%s','now'), 'Capture//', '');
-INSERT OR IGNORE INTO Profiles(timestamp, key, value)
+INSERT OR REPLACE INTO Profiles(timestamp, key, value)
     VALUES (strftime('%s','now'), 'Capture/Default', 'Mode=
-Device=
-DeviceDisplayName=
+Device=virtual_mic
+DeviceDisplayName=TS3MusicBot_Mic
 ');
-INSERT OR IGNORE INTO Profiles(timestamp, key, value)
+INSERT OR REPLACE INTO Profiles(timestamp, key, value)
     VALUES (strftime('%s','now'), 'Capture/Default/PreProcessing',
 'denoise=false
 continous_transmission=true
@@ -368,6 +368,27 @@ TS3_PID=$!
         sleep 0.3
     done
     echo "[TS3] License key patch loop done"
+
+    # ── 7b2. Re-patch capture profile after TS3 writes its own defaults ──────
+    # TS3 may overwrite the capture profile during startup. Re-apply our settings
+    # with INSERT OR REPLACE to ensure continuous transmission mode is active.
+    echo "[TS3] Re-patching capture profile…"
+    sqlite3 "$DB" "
+        INSERT OR REPLACE INTO Profiles(timestamp,key,value) VALUES(strftime('%s','now'),'DefaultCaptureProfile','Default');
+        INSERT OR REPLACE INTO Profiles(timestamp,key,value) VALUES(strftime('%s','now'),'Capture/Default','Mode=
+Device=virtual_mic
+DeviceDisplayName=TS3MusicBot_Mic
+');
+        INSERT OR REPLACE INTO Profiles(timestamp,key,value) VALUES(strftime('%s','now'),'Capture/Default/PreProcessing','denoise=false
+continous_transmission=true
+vad=false
+voiceactivation_level=-40
+agc=false
+vad_over_ptt=false
+vad_mode=0');
+    " 2>/dev/null
+    echo "[TS3] Capture profile re-patched"
+
     # Wait for identity/myTeamSpeak dialogs to be dismissed (7e) before dumping,
     # so we capture the DB state AFTER TS3 has written the new identity.
     for _w in $(seq 1 120); do
@@ -375,6 +396,8 @@ TS3_PID=$!
         sleep 0.5
     done
     # Dump all candidate tables to discover where TS3 stores the identity key.
+    echo "[TS3] === Capture profile values ==="
+    sqlite3 "$DB" "SELECT key, value FROM Profiles WHERE key LIKE 'Capture%' OR key LIKE '%Capture%';" 2>/dev/null
     echo "[TS3] === Profiles schema ==="
     sqlite3 "$DB" ".schema Profiles" 2>/dev/null
     echo "[TS3] === All non-empty tables (identity discovery) ==="
