@@ -394,7 +394,10 @@ class AudioManager extends EventEmitter {
         const m = line.match(/^out_time_us=(\d+)$/);
         if (!m) continue;
         const segSecs = parseInt(m[1]) / 1_000_000;
-        this._elapsed = segSecs + this._seekOffset;
+        const rawElapsed = segSecs + this._seekOffset;
+        // Clamp to actual duration so the apad padding (2.5s silence tail) doesn't
+        // push the timeline past 100%. The web UI sees elapsed → duration, done.
+        this._elapsed = this._duration ? Math.min(rawElapsed, this._duration) : rawElapsed;
         this.emit('progress', { elapsed: this._elapsed, duration: this._duration });
       }
     });
