@@ -395,9 +395,14 @@ class AudioManager extends EventEmitter {
         if (!m) continue;
         const segSecs = parseInt(m[1]) / 1_000_000;
         const rawElapsed = segSecs + this._seekOffset;
-        // Clamp to actual duration so the apad padding (2.5s silence tail) doesn't
-        // push the timeline past 100%. The web UI sees elapsed → duration, done.
-        this._elapsed = this._duration ? Math.min(rawElapsed, this._duration) : rawElapsed;
+        // module-virtual-source buffers ~2s before audio reaches TS3, so FFmpeg's
+        // progress is 2s ahead of what the listener actually hears. Subtract the
+        // delay and clamp to [0, duration] for an accurate timeline.
+        const bufferDelaySec = 2.0;
+        const adjusted = rawElapsed - bufferDelaySec;
+        this._elapsed = this._duration
+          ? Math.max(0, Math.min(adjusted, this._duration))
+          : Math.max(0, adjusted);
         this.emit('progress', { elapsed: this._elapsed, duration: this._duration });
       }
     });
