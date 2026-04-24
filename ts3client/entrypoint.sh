@@ -66,10 +66,9 @@ load-module module-null-sink sink_name=ts3_discard sink_properties=device.descri
 
 # Virtual microphone — TS3 client captures from here (monitors virtual_out only).
 # Because TS3's playback goes to ts3_discard, only FFmpeg output ends up here.
-# Using module-remap-source instead of module-virtual-source: virtual-source has
-# a 2000ms internal buffer by default (latency_msec) which swallows short audio.
-# remap-source passes audio through with no additional buffering.
-load-module module-remap-source master=virtual_out.monitor source_name=virtual_mic source_properties=device.description="TS3MusicBot_Mic" remix=no latency_msec=50
+# NOTE: module-virtual-source has a ~2000ms internal buffer. FFmpeg appends
+# padding (apad) to compensate so all real audio passes through the buffer.
+load-module module-virtual-source source_name=virtual_mic master=virtual_out.monitor source_properties=device.description="TS3MusicBot_Mic"
 
 # Unix socket — libpulse default discovery checks this path first.
 # Without it, libpulse gets ENOENT on both socket candidates and

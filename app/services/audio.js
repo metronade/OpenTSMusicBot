@@ -76,9 +76,10 @@ class AudioManager extends EventEmitter {
     this._elapsed    = seekTo;
     this._seekOffset = seekTo;
 
-    const effectiveDur = this._duration ? this._duration - seekTo : null;
-    const needsPad     = effectiveDur !== null && effectiveDur < 2;
-    const audioFilter  = `volume=${this.volume / 100}${needsPad ? ',apad=pad_dur=1' : ''}`;
+    // apad=pad_dur=2.5: module-virtual-source has a ~2000ms internal buffer.
+    // Without padding, short files are swallowed by the buffer. The 2.5s of
+    // silence tail ensures all real audio passes through before FFmpeg exits.
+    const audioFilter  = `volume=${this.volume / 100},apad=pad_dur=2.5`;
 
     const args = [
       ...(seekTo > 0 ? ['-ss', String(seekTo)] : []),
@@ -162,7 +163,7 @@ class AudioManager extends EventEmitter {
           '-vn',
           '-ac', '2',
           '-ar', '48000',
-          '-af', `volume=${this.volume / 100}`,
+          '-af', `volume=${this.volume / 100},apad=pad_dur=2.5`,
           '-f', 'pulse',
           config.PULSE_SINK,
         ];
@@ -223,7 +224,8 @@ class AudioManager extends EventEmitter {
     this._seekOffset = 0;
 
     // kerstin-low uses 16 kHz; resampling introduces more jitter → needs more tail.
-    const padSecs = voice === 'kerstin' ? 3 : 2;
+    // Extra +2s on top of the base padding compensates for virtual-source buffer.
+    const padSecs = voice === 'kerstin' ? 5 : 4;
     const args = [
       '-re',
       '-i', tmpFile,
@@ -263,9 +265,7 @@ class AudioManager extends EventEmitter {
 
     let args;
     if (track.type === 'file' && track.path) {
-      const remaining    = this._duration ? this._duration - sec : null;
-      const needsPad     = remaining !== null && remaining < 2;
-      const audioFilter  = `volume=${this.volume / 100}${needsPad ? ',apad=pad_dur=1' : ''}`;
+      const audioFilter  = `volume=${this.volume / 100},apad=pad_dur=2.5`;
 
       args = [
         '-re', '-ss', String(sec),
@@ -281,7 +281,7 @@ class AudioManager extends EventEmitter {
         '-ss', String(sec),
         '-i', track.streamUrl,
         '-vn', '-ac', '2', '-ar', '48000',
-        '-af', `volume=${this.volume / 100}`,
+        '-af', `volume=${this.volume / 100},apad=pad_dur=2.5`,
         '-f', 'pulse', config.PULSE_SINK,
       ];
     } else {
