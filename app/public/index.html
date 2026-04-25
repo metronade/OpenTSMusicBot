@@ -46,6 +46,7 @@
       <li><a href="#" data-page="dashboard"  class="active">Dashboard</a></li>
       <li><a href="#" data-page="library">Library</a></li>
       <li><a href="#" data-page="playlists">Playlists</a></li>
+      <li><a href="#" data-page="tts">TTS</a></li>
       <li><a href="#" data-page="settings" id="nav-settings" class="admin-only hidden">Settings</a></li>
     </ul>
     <div class="sidebar-footer">
@@ -147,16 +148,12 @@
         <!-- Text to Speech -->
         <div class="card">
           <div class="card-title">Text to Speech</div>
-          <div class="input-row" style="margin-bottom:.5rem">
-            <select id="tts-voice" style="flex:none;width:auto">
-              <option value="thorsten">Thorsten</option>
-              <option value="kerstin">Kerstin</option>
-            </select>
-          </div>
+          <p class="subtitle" style="margin-bottom:.5rem">Quick TTS with default voice and settings.</p>
           <div class="input-row">
             <input id="tts-text" type="text" placeholder="Text eingeben…" maxlength="300" />
-            <button id="tts-btn" class="btn">🔊 Say</button>
+            <button id="tts-btn" class="btn">Say</button>
           </div>
+          <a href="#" data-page="tts" class="tts-page-link link" style="display:inline-block;margin-top:.5rem">Open TTS page for voice &amp; parameter settings</a>
         </div>
 
         <!-- Queue -->
@@ -241,6 +238,64 @@
       </div>
     </section>
 
+    <!-- ── TTS PAGE ──────────────────────────────────────────────────────────── -->
+    <section id="page-tts" class="page hidden">
+      <h2>Text to Speech</h2>
+
+      <div class="two-col">
+
+        <!-- Voice & Parameters -->
+        <div>
+          <div class="card">
+            <div class="card-title">Voice</div>
+            <select id="tts-page-voice" style="width:100%"></select>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Parameters</div>
+            <div class="slider-group">
+              <label class="slider-label">
+                <span>Noise Scale <span class="text-muted" id="noise-scale-val">0.667</span></span>
+                <input type="range" id="noise-scale" min="0" max="1" step="0.01" value="0.667" />
+              </label>
+              <p class="subtitle">Controls randomness in audio generation. Higher = more variation.</p>
+            </div>
+            <div class="slider-group">
+              <label class="slider-label">
+                <span>Length Scale <span class="text-muted" id="length-scale-val">1.0</span></span>
+                <input type="range" id="length-scale" min="0.1" max="5" step="0.05" value="1.0" />
+              </label>
+              <p class="subtitle">Speech speed. &lt;1 = faster, &gt;1 = slower.</p>
+            </div>
+            <div class="slider-group">
+              <label class="slider-label">
+                <span>Speaker Noise <span class="text-muted" id="speaker-noise-val">0.8</span></span>
+                <input type="range" id="speaker-noise" min="0" max="1" step="0.01" value="0.8" />
+              </label>
+              <p class="subtitle">Controls phoneme prediction noise. Higher = more variation.</p>
+            </div>
+            <div class="controls-row">
+              <button id="piper-reset-btn" class="btn btn-secondary">Reset Defaults</button>
+              <button id="piper-save-btn" class="btn">Save Parameters</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Text Input -->
+        <div>
+          <div class="card tts-text-card">
+            <div class="card-title">Text</div>
+            <textarea id="tts-page-text" placeholder="Text eingeben…" maxlength="300" rows="6"></textarea>
+            <div class="controls-row">
+              <button id="tts-page-btn" class="btn">Say</button>
+              <span id="tts-page-msg" class="hidden" style="margin-left:.75rem;color:var(--green)"></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
     <!-- ── SETTINGS (admin) ────────────────────────────────────────────────── -->
     <section id="page-settings" class="page hidden">
       <h2>Settings</h2>
@@ -288,10 +343,7 @@
         <div id="tts-events-form">
           <div class="tts-event-row" style="margin-bottom:.75rem">
             <label>Stimme:
-              <select id="tts-events-voice" style="margin-left:.5rem">
-                <option value="thorsten">Thorsten</option>
-                <option value="kerstin">Kerstin</option>
-              </select>
+              <select id="tts-events-voice" style="margin-left:.5rem"></select>
             </label>
           </div>
           <div class="tts-event-row">

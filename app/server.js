@@ -12,6 +12,7 @@ const config    = require('./config');
 const db        = require('./db/init');
 const ts3query  = require('./services/ts3query');
 const audio     = require('./services/audio');
+const { getVoice, getAllVoiceIds, VOICES } = require('./voices');
 
 const authRouter      = require('./routes/auth');
 const botRouter       = require('./routes/bot');
@@ -180,7 +181,7 @@ app.get('/api/settings/tts-events', requireAdmin, (req, res) => {
 
 app.post('/api/settings/tts-events', requireAdmin, (req, res) => {
   const current = db.getSetting('tts_events');
-  if (['thorsten', 'kerstin'].includes(req.body.voice)) current.voice = req.body.voice;
+  if (req.body.voice && getVoice(req.body.voice)) current.voice = req.body.voice;
   for (const event of ['join', 'leave']) {
     if (event in req.body) {
       const e = req.body[event];
@@ -213,6 +214,7 @@ io.on('connection', socket => {
     history:    audio.getHistory(),
     loop:       audio.getLoop(),
     voice:      audio.getVoice(),
+    piperParams: audio.getPiperParams(),
   });
 });
 
@@ -230,6 +232,7 @@ audio.on('history',  history => io.emit('bot:history',  history));
 audio.on('progress', prog    => io.emit('bot:progress', prog));
 audio.on('loop',     val     => io.emit('bot:loop',     val));
 audio.on('voice',    val     => io.emit('bot:voice',    val));
+audio.on('piper-params', p   => io.emit('bot:piper-params', p));
 
 // ── TTS event announcements ───────────────────────────────────────────────────
 function handleTtsEvent(eventKey, nickname) {
@@ -341,9 +344,10 @@ ts3query.on('textmessage', async payload => {
       }
 
       case '!voice': {
-        const v = arg.toLowerCase();
-        if (!['thorsten', 'kerstin'].includes(v)) {
-          await reply(`Aktuelle Stimme: ${audio.getVoice()} – Wechseln mit: !voice thorsten / !voice kerstin`);
+        const v = arg.toLowerCase().trim();
+        if (!v || !getVoice(v)) {
+          const names = VOICES.map(vc => vc.id).join(', ');
+          await reply(`Aktuelle Stimme: ${audio.getVoice()} – Wechseln mit: !voice <name>\nVerfügbar: ${names}`);
           return;
         }
         audio.setVoice(v);
@@ -380,7 +384,7 @@ ts3query.on('textmessage', async payload => {
           '!vol <0-100>               – Lautstärke einstellen',
           '!stop                      – Wiedergabe stoppen',
           '!say <text>                – Text vorlesen (TTS)',
-          '!voice thorsten|kerstin    – TTS-Stimme wechseln',
+          '!voice <name>              – TTS-Stimme wechseln',
           '!help                      – Alle Commands anzeigen',
         ];
         for (const line of lines) {

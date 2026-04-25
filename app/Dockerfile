@@ -23,11 +23,19 @@ RUN wget -q "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}
  && rm /tmp/piper.tar.gz
 
 RUN mkdir -p /app/piper-voices \
- && HF="https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE" \
- && wget -q "$HF/thorsten/medium/de_DE-thorsten-medium.onnx"      -O /app/piper-voices/de_DE-thorsten-medium.onnx \
- && wget -q "$HF/thorsten/medium/de_DE-thorsten-medium.onnx.json" -O /app/piper-voices/de_DE-thorsten-medium.onnx.json \
- && wget -q "$HF/kerstin/low/de_DE-kerstin-low.onnx"              -O /app/piper-voices/de_DE-kerstin-low.onnx \
- && wget -q "$HF/kerstin/low/de_DE-kerstin-low.onnx.json"         -O /app/piper-voices/de_DE-kerstin-low.onnx.json
+ && HF="https://huggingface.co/rhasspy/piper-voices/resolve/main" \
+ && wget -q "$HF/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx"      -O /app/piper-voices/de_DE-thorsten-medium.onnx \
+ && wget -q "$HF/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json" -O /app/piper-voices/de_DE-thorsten-medium.onnx.json \
+ && wget -q "$HF/de/de_DE/kerstin/low/de_DE-kerstin-low.onnx"              -O /app/piper-voices/de_DE-kerstin-low.onnx \
+ && wget -q "$HF/de/de_DE/kerstin/low/de_DE-kerstin-low.onnx.json"         -O /app/piper-voices/de_DE-kerstin-low.onnx.json \
+ && wget -q "$HF/de/de_DE/thorsten_emotional/medium/de_DE-thorsten_emotional-medium.onnx"      -O /app/piper-voices/de_DE-thorsten_emotional-medium.onnx \
+ && wget -q "$HF/de/de_DE/thorsten_emotional/medium/de_DE-thorsten_emotional-medium.onnx.json" -O /app/piper-voices/de_DE-thorsten_emotional-medium.onnx.json \
+ && wget -q "$HF/en/en_GB/alba/medium/en_GB-alba-medium.onnx"      -O /app/piper-voices/en_GB-alba-medium.onnx \
+ && wget -q "$HF/en/en_GB/alba/medium/en_GB-alba-medium.onnx.json" -O /app/piper-voices/en_GB-alba-medium.onnx.json \
+ && wget -q "$HF/en/en_GB/cori/medium/en_GB-cori-medium.onnx"      -O /app/piper-voices/en_GB-cori-medium.onnx \
+ && wget -q "$HF/en/en_GB/cori/medium/en_GB-cori-medium.onnx.json" -O /app/piper-voices/en_GB-cori-medium.onnx.json \
+ && wget -q "$HF/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx"      -O /app/piper-voices/en_GB-northern_english_male-medium.onnx \
+ && wget -q "$HF/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx.json" -O /app/piper-voices/en_GB-northern_english_male-medium.onnx.json
 
 # ── yt-dlp via pip (enables automatic plugin discovery) ──────────────────────
 # bgutil-ytdlp-pot-provider generates PO Tokens so YouTube works on server IPs

@@ -5,6 +5,7 @@ const path         = require('path');
 const fs           = require('fs');
 const EventEmitter = require('events');
 const config       = require('../config');
+const { getVoice } = require('../voices');
 
 class AudioManager extends EventEmitter {
   constructor() {
@@ -21,6 +22,7 @@ class AudioManager extends EventEmitter {
     this._seekOffset  = 0;    // seek offset applied to current FFmpeg invocation
     this.history      = [];   // last 10 played tracks
     this._voice       = 'thorsten';
+    this._piperParams = { noiseScale: 0.667, lengthScale: 1.0, speakerNoise: 0.8 };
     this._generation  = 0;  // incremented on every play/seek; lets later calls supersede earlier async setups
   }
 
@@ -35,6 +37,7 @@ class AudioManager extends EventEmitter {
   getDuration()     { return this._duration; }
   getElapsed()      { return this._elapsed; }
   getVoice()        { return this._voice; }
+  getPiperParams()  { return { ...this._piperParams }; }
 
   setLoop(val) {
     this._loop = !!val;
@@ -43,10 +46,18 @@ class AudioManager extends EventEmitter {
   }
 
   setVoice(voice) {
-    if (!['thorsten', 'kerstin'].includes(voice)) return this._voice;
+    if (!getVoice(voice)) return this._voice;
     this._voice = voice;
     this.emit('voice', this._voice);
     return this._voice;
+  }
+
+  setPiperParams(params) {
+    if (params.noiseScale != null)  this._piperParams.noiseScale  = Math.max(0, Math.min(1, parseFloat(params.noiseScale)));
+    if (params.lengthScale != null) this._piperParams.lengthScale = Math.max(0.1, Math.min(5, parseFloat(params.lengthScale)));
+    if (params.speakerNoise != null) this._piperParams.speakerNoise = Math.max(0, Math.min(1, parseFloat(params.speakerNoise)));
+    this.emit('piper-params', this.getPiperParams());
+    return this.getPiperParams();
   }
 
   // ── Queue management ───────────────────────────────────────────────────────
@@ -192,19 +203,28 @@ class AudioManager extends EventEmitter {
 
   // ── TTS ────────────────────────────────────────────────────────────────────
 
-  async say(text, voiceOverride = null) {
-    const voice     = (voiceOverride && ['thorsten', 'kerstin'].includes(voiceOverride)) ? voiceOverride : this._voice;
-    const modelFile = voice === 'kerstin'
-      ? 'de_DE-kerstin-low.onnx'
-      : 'de_DE-thorsten-medium.onnx';
-    const modelPath = path.join(config.PIPER_VOICES_DIR, modelFile);
+  async say(text, voiceOverride = null, piperOverride = null) {
+    const voiceId   = (voiceOverride && getVoice(voiceOverride)) ? voiceOverride : this._voice;
+    const voiceCfg  = getVoice(voiceId);
+    if (!voiceCfg) throw new Error(`Unknown voice: ${voiceId}`);
+
+    const modelPath = path.join(config.PIPER_VOICES_DIR, voiceCfg.modelFile);
     const tmpFile   = path.join('/tmp', `tts_${Date.now()}.wav`);
+    const params    = piperOverride || this._piperParams;
+
+    const piperArgs = [
+      '--model', modelPath,
+      '--output_file', tmpFile,
+      '--noise-scale', String(params.noiseScale),
+      '--length-scale', String(params.lengthScale),
+      '--speaker-noise', String(params.speakerNoise),
+    ];
+    if (voiceCfg.multiSpeaker && voiceCfg.speakerId != null) {
+      piperArgs.push('--speaker', String(voiceCfg.speakerId));
+    }
 
     await new Promise((resolve, reject) => {
-      const piper = spawn(config.PIPER_BINARY, [
-        '--model', modelPath,
-        '--output_file', tmpFile,
-      ], { env: { ...process.env, LD_LIBRARY_PATH: '/usr/local/piper' } });
+      const piper = spawn(config.PIPER_BINARY, piperArgs, { env: { ...process.env, LD_LIBRARY_PATH: '/usr/local/piper' } });
 
       // Piper reads line-by-line — trailing \n is required to flush the last sentence
       piper.stdin.write(text.replace(/\r?\n/g, ' ') + '\n');
@@ -224,9 +244,7 @@ class AudioManager extends EventEmitter {
     this._elapsed  = 0;
     this._seekOffset = 0;
 
-    // kerstin-low uses 16 kHz; resampling introduces more jitter → needs more tail.
-    // Extra +2s on top of the base padding compensates for virtual-source buffer.
-    const padSecs = voice === 'kerstin' ? 5 : 4;
+    const padSecs = voiceCfg.quality === 'low' ? 5 : 4;
     const args = [
       '-re',
       '-i', tmpFile,

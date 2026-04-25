@@ -3,6 +3,7 @@
 const express  = require('express');
 const ts3query = require('../services/ts3query');
 const audio    = require('../services/audio');
+const { VOICES, getVoice, getAllVoiceIds, voicesByLanguage } = require('../voices');
 
 const router = express.Router();
 
@@ -17,6 +18,7 @@ router.get('/status', (req, res) => {
     history:     audio.getHistory(),
     loop:        audio.getLoop(),
     voice:       audio.getVoice(),
+    piperParams: audio.getPiperParams(),
   });
 });
 
@@ -232,20 +234,44 @@ router.get('/voice', (req, res) => {
   res.json({ voice: audio.getVoice() });
 });
 
-// POST /api/bot/voice  { voice: 'thorsten'|'kerstin' }
+// GET /api/bot/voices — all available voices grouped by language
+router.get('/voices', (req, res) => {
+  const groups = {};
+  for (const [lang, voices] of voicesByLanguage()) {
+    groups[lang] = voices.map(v => ({ id: v.id, label: v.label, langLabel: v.langLabel }));
+  }
+  res.json(groups);
+});
+
+// GET /api/bot/piper-params
+router.get('/piper-params', (req, res) => {
+  res.json(audio.getPiperParams());
+});
+
+// POST /api/bot/piper-params  { noiseScale?, lengthScale?, speakerNoise? }
+router.post('/piper-params', (req, res) => {
+  res.json(audio.setPiperParams(req.body));
+});
+
+// POST /api/bot/voice  { voice: string }
 router.post('/voice', (req, res) => {
   const { voice } = req.body;
-  if (!['thorsten', 'kerstin'].includes(voice))
-    return res.status(400).json({ error: 'voice must be thorsten or kerstin' });
+  if (!getVoice(voice))
+    return res.status(400).json({ error: `Unknown voice. Available: ${getAllVoiceIds().join(', ')}` });
   res.json({ voice: audio.setVoice(voice) });
 });
 
-// POST /api/bot/say  { text: string }
+// POST /api/bot/say  { text: string, voice?: string, noiseScale?: number, lengthScale?: number, speakerNoise?: number }
 router.post('/say', async (req, res) => {
   const text = (req.body.text || '').trim().slice(0, 300);
   if (!text) return res.status(400).json({ error: 'text required' });
   try {
-    await audio.say(text);
+    const voiceOverride = req.body.voice || null;
+    const piperOverride = {};
+    if (req.body.noiseScale != null)  piperOverride.noiseScale  = parseFloat(req.body.noiseScale);
+    if (req.body.lengthScale != null) piperOverride.lengthScale = parseFloat(req.body.lengthScale);
+    if (req.body.speakerNoise != null) piperOverride.speakerNoise = parseFloat(req.body.speakerNoise);
+    await audio.say(text, voiceOverride, Object.keys(piperOverride).length ? piperOverride : null);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

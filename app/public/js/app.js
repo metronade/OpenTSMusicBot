@@ -34,24 +34,36 @@ function formatDate(iso) {
 let currentUser  = null;
 let allFiles     = [];
 let allPlaylists = [];
+let voiceGroups  = {};  // { de: [{id, label, langLabel}], en: [...] }
 let activePl     = null;
 let _seeking     = false;
 
 // ── Page navigation ───────────────────────────────────────────────────────────
+function navigateTo(pg) {
+  document.querySelectorAll('#sidebar a').forEach(a => a.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => { p.classList.remove('active'); p.classList.add('hidden'); });
+  const navLink = document.querySelector(`#sidebar a[data-page="${pg}"]`);
+  if (navLink) navLink.classList.add('active');
+  const target = $(`page-${pg}`);
+  target.classList.remove('hidden');
+  target.classList.add('active');
+  if (pg === 'library')   loadLibrary();
+  if (pg === 'playlists') loadPlaylists();
+  if (pg === 'settings')  loadSettings();
+  if (pg === 'tts')       loadTtsPage();
+}
+
 document.querySelectorAll('#sidebar a[data-page]').forEach(link => {
   link.addEventListener('click', e => {
     e.preventDefault();
-    const pg = link.dataset.page;
-    document.querySelectorAll('#sidebar a').forEach(a => a.classList.remove('active'));
-    document.querySelectorAll('.page').forEach(p => { p.classList.remove('active'); p.classList.add('hidden'); });
-    link.classList.add('active');
-    const target = $(`page-${pg}`);
-    target.classList.remove('hidden');
-    target.classList.add('active');
-    if (pg === 'library')   loadLibrary();
-    if (pg === 'playlists') loadPlaylists();
-    if (pg === 'settings')  loadSettings();
+    navigateTo(link.dataset.page);
   });
+});
+
+// In-page navigation links (e.g. "Open TTS page" link on dashboard)
+document.addEventListener('click', e => {
+  const link = e.target.closest('a.tts-page-link[data-page]');
+  if (link) { e.preventDefault(); navigateTo(link.dataset.page); }
 });
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -124,7 +136,7 @@ let socket = null;
 function initSocket() {
   socket = io({ transports: ['websocket'] });
 
-  socket.on('connect',    () => loadBotStatus());
+  socket.on('connect',    () => { loadBotStatus(); loadVoiceList(); });
   socket.on('disconnect', () => setBotStatus(false));
 
   socket.on('state', s => {
@@ -136,6 +148,7 @@ function initSocket() {
     renderHistory(s.history || []);
     setLoop(s.loop || false);
     setVoice(s.voice || 'thorsten');
+    setPiperParams(s.piperParams || { noiseScale: 0.667, lengthScale: 1.0, speakerNoise: 0.8 });
   });
 
   socket.on('bot:connected',    () => { setBotStatus(true);  toast('Bot connected to TS3', 'success'); loadBotStatus(); });
@@ -150,14 +163,9 @@ function initSocket() {
   socket.on('bot:progress',     p   => setProgress(p));
   socket.on('bot:loop',         val => setLoop(val));
   socket.on('bot:voice',        val => setVoice(val));
+  socket.on('bot:piper-params', p   => setPiperParams(p));
 
-  // TTS voice selector
-  $('tts-voice').addEventListener('change', async e => {
-    try { await api('POST', '/api/bot/voice', { voice: e.target.value }); }
-    catch (err) { toast(err.message, 'error'); }
-  });
-
-  // TTS say button
+  // TTS say button (dashboard quick TTS)
   $('tts-btn').addEventListener('click', async () => {
     const text = $('tts-text').value.trim();
     if (!text) return;
@@ -252,7 +260,8 @@ function setLoop(val) {
 }
 
 function setVoice(val) {
-  $('tts-voice').value = val || 'thorsten';
+  const sel = $('tts-page-voice');
+  if (sel && sel.querySelector(`option[value="${val}"]`)) sel.value = val;
 }
 
 function fmtTime(secs) {
@@ -723,6 +732,125 @@ $('pl-play-btn').addEventListener('click', async () => {
   } catch (e) { toast(e.message, 'error'); }
 });
 
+// ── Voice list & TTS Page ──────────────────────────────────────────────────────
+async function loadVoiceList() {
+  try {
+    voiceGroups = await api('GET', '/api/bot/voices');
+    populateVoiceDropdowns();
+  } catch { /* ignore */ }
+}
+
+function populateVoiceDropdowns() {
+  // Populate all voice selects on the page
+  const selects = [$('tts-page-voice'), $('tts-events-voice')].filter(Boolean);
+  const currentVoice = $('tts-page-voice')?.value;
+
+  selects.forEach(sel => {
+    const prev = sel.value;
+    sel.innerHTML = '';
+    for (const [lang, voices] of Object.entries(voiceGroups)) {
+      if (voices.length === 0) continue;
+      const group = document.createElement('optgroup');
+      group.label = voices[0].langLabel;
+      voices.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = v.label;
+        group.appendChild(opt);
+      });
+      sel.appendChild(group);
+    }
+    // Restore previous selection if still valid
+    if (prev && sel.querySelector(`option[value="${prev}"]`)) sel.value = prev;
+  });
+
+  // Restore TTS page voice
+  if (currentVoice && $('tts-page-voice')?.querySelector(`option[value="${currentVoice}"]`)) {
+    $('tts-page-voice').value = currentVoice;
+  }
+}
+
+function setPiperParams(params) {
+  if (!params) return;
+  const ns = $('noise-scale');
+  const ls = $('length-scale');
+  const sn = $('speaker-noise');
+  if (ns) { ns.value = params.noiseScale;  $('noise-scale-val').textContent  = params.noiseScale.toFixed(3); }
+  if (ls) { ls.value = params.lengthScale; $('length-scale-val').textContent = params.lengthScale.toFixed(2); }
+  if (sn) { sn.value = params.speakerNoise; $('speaker-noise-val').textContent = params.speakerNoise.toFixed(3); }
+}
+
+async function loadTtsPage() {
+  if (!Object.keys(voiceGroups).length) await loadVoiceList();
+  populateVoiceDropdowns();
+  try {
+    const params = await api('GET', '/api/bot/piper-params');
+    setPiperParams(params);
+  } catch { /* ignore */ }
+}
+
+// TTS page voice selector
+document.addEventListener('change', e => {
+  if (e.target.id === 'tts-page-voice') {
+    api('POST', '/api/bot/voice', { voice: e.target.value }).catch(err => toast(err.message, 'error'));
+  }
+});
+
+// TTS page slider live update
+['noise-scale', 'length-scale', 'speaker-noise'].forEach(id => {
+  const slider = $(id);
+  if (!slider) return;
+  slider.addEventListener('input', () => {
+    const valId = id + '-val';
+    $(valId).textContent = parseFloat(slider.value).toFixed(id === 'length-scale' ? 2 : 3);
+  });
+});
+
+// Save Piper params
+$('piper-save-btn')?.addEventListener('click', async () => {
+  try {
+    const params = await api('POST', '/api/bot/piper-params', {
+      noiseScale:  parseFloat($('noise-scale').value),
+      lengthScale: parseFloat($('length-scale').value),
+      speakerNoise: parseFloat($('speaker-noise').value),
+    });
+    setPiperParams(params);
+    toast('Parameters saved.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+});
+
+// Reset Piper params
+$('piper-reset-btn')?.addEventListener('click', async () => {
+  try {
+    const params = await api('POST', '/api/bot/piper-params', {
+      noiseScale: 0.667,
+      lengthScale: 1.0,
+      speakerNoise: 0.8,
+    });
+    setPiperParams(params);
+    toast('Parameters reset to defaults.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+});
+
+// TTS page say button
+$('tts-page-btn')?.addEventListener('click', async () => {
+  const text = $('tts-page-text').value.trim();
+  if (!text) return;
+  try {
+    $('tts-page-btn').disabled = true;
+    await api('POST', '/api/bot/say', {
+      text,
+      voice: $('tts-page-voice')?.value || undefined,
+      noiseScale:  parseFloat($('noise-scale')?.value),
+      lengthScale: parseFloat($('length-scale')?.value),
+      speakerNoise: parseFloat($('speaker-noise')?.value),
+    });
+    toast('TTS gestartet', 'success');
+  } catch (err) { toast(err.message, 'error'); }
+  finally { $('tts-page-btn').disabled = false; }
+});
+$('tts-page-text')?.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('tts-page-btn').click(); } });
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 async function loadSettings() {
   if (!currentUser) {
@@ -857,8 +985,11 @@ $('cookies-delete-btn').addEventListener('click', async () => {
 // ── TTS Event Announcements ───────────────────────────────────────────────────
 async function loadTtsEvents() {
   try {
+    if (!Object.keys(voiceGroups).length) await loadVoiceList();
+    populateVoiceDropdowns();
     const s = await api('GET', '/api/settings/tts-events');
-    $('tts-events-voice').value    = s.voice || 'thorsten';
+    if ($('tts-events-voice').querySelector(`option[value="${s.voice || 'thorsten'}"]`))
+      $('tts-events-voice').value = s.voice || 'thorsten';
     $('tts-join-enabled').checked  = !!s.join?.enabled;
     $('tts-join-text').value       = s.join?.text  || '';
     $('tts-leave-enabled').checked = !!s.leave?.enabled;

@@ -389,3 +389,36 @@ code   { background: rgba(255,255,255,.08); padding: .1em .35em; border-radius: 
 }
 .toggle-row:hover { background: var(--bg-hover); }
 .toggle-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+
+/* ── TTS Page ─────────────────────────────────────────────────────────────── */
+.tts-text-card textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.5rem 0.7rem;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  transition: border-color .15s;
+}
+.tts-text-card textarea:focus { border-color: var(--accent); }
+
+.slider-group { margin-bottom: 1rem; }
+.slider-group:last-of-type { margin-bottom: 0; }
+.slider-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 13px;
+  font-weight: 600;
+}
+.slider-label input[type=range] {
+  flex: 1;
+  max-width: 200px;
+  accent-color: var(--accent);
+}
+.slider-group .subtitle { margin-top: .2rem; }

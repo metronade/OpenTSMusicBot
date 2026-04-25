@@ -9,7 +9,7 @@ Audio from local files or YouTube is streamed via `yt-dlp` → `FFmpeg` → Puls
 |----------|---------|
 | **Playback** | Local files, YouTube streams, named playlists, queue with auto-advance |
 | **Controls** | Volume, stop, loop, seek/scrub, channel move, nickname change |
-| **TTS** | German text-to-speech via Piper (voices: Thorsten, Kerstin) |
+| **TTS** | Text-to-speech via Piper — 10 voices in German & English, adjustable noise/speed/speaker-noise parameters |
 | **TTS Events** | Configurable join/leave announcements with `{username}` placeholder |
 | **Web UI** | Dashboard, drag-and-drop upload, playlist builder, user management |
 | **Chat Commands** | Full set of `!`-commands usable directly in the TS3 channel |
@@ -79,7 +79,7 @@ Commands are typed in the **TS3 channel** where the bot is present.
 | `!vol <0-100>` | Set playback volume in real-time |
 | `!stop` | Stop current playback and clear the queue |
 | `!say <text>` | Read text aloud via TTS (max 300 characters) |
-| `!voice thorsten\|kerstin` | Switch the TTS voice (or show current voice) |
+| `!voice <name>` | Switch the TTS voice (or show current + all available voices) |
 | `!list` | Show all files and playlists in the channel chat |
 | `!help` | Show all available commands |
 
@@ -91,7 +91,8 @@ Commands are typed in the **TS3 channel** where the bot is present.
 
 | Section | Features |
 |---------|----------|
-| **Dashboard** | Bot status (Connect / Disconnect / Reconnect), now-playing with live progress bar and seek slider, volume slider, Quick Play with autocomplete, YouTube stream input, queue management, play history, channel switcher, nickname changer, TTS input with voice selector |
+| **Dashboard** | Bot status (Connect / Disconnect / Reconnect), now-playing with live progress bar and seek slider, volume slider, Quick Play with autocomplete, YouTube stream input, queue management, play history, channel switcher, nickname changer, quick TTS input |
+| **TTS** | Dedicated TTS page — voice selection (German & English), Piper parameter sliders (noise scale, length scale, speaker noise), text input |
 | **Library** | Drag-and-drop upload (mp3 / ogg / wav / flac / m4a, max 50 MB), searchable file list with per-file Play, +Queue and Delete buttons |
 | **Playlists** | Create / delete playlists, add / remove files, play entire playlist |
 | **Settings** *(admin)* | User management, chat feedback toggles, TTS event announcements, identity upload, YouTube cookies |
@@ -131,24 +132,54 @@ Changes take effect immediately without a restart.
 
 ## Text-to-Speech (TTS)
 
-TTS is powered by **[Piper](https://github.com/rhasspy/piper)** with pre-bundled German voice models.
+TTS is powered by **[Piper](https://github.com/rhasspy/piper)** with pre-bundled voice models in German and English.
 
 ### Available voices
 
-| Voice | Model | Sample rate | Notes |
-|-------|-------|-------------|-------|
-| `thorsten` | de_DE-thorsten-medium | 22 050 Hz | Default — natural, clear |
-| `kerstin` | de_DE-kerstin-low | 16 000 Hz | Lighter model |
+#### German
+
+| Voice ID | Label | Model | Notes |
+|----------|-------|-------|-------|
+| `thorsten` | Thorsten | de_DE-thorsten-medium | Default — natural, clear |
+| `kerstin` | Kerstin | de_DE-kerstin-low | Lighter model |
+| `thorsten_angry` | Thorsten (Angry) | de_DE-thorsten_emotional-medium | Multi-speaker model |
+| `thorsten_disgusted` | Thorsten (Disgusted) | de_DE-thorsten_emotional-medium | Multi-speaker model |
+| `thorsten_drunk` | Thorsten (Drunk) | de_DE-thorsten_emotional-medium | Multi-speaker model |
+| `thorsten_sleepy` | Thorsten (Sleepy) | de_DE-thorsten_emotional-medium | Multi-speaker model |
+| `thorsten_whisper` | Thorsten (Whisper) | de_DE-thorsten_emotional-medium | Multi-speaker model |
+
+#### English
+
+| Voice ID | Label | Model |
+|----------|-------|-------|
+| `alba` | Alba | en_GB-alba-medium |
+| `cori` | Cori | en_GB-cori-medium |
+| `northern_english_male` | Northern English Male | en_GB-northern_english_male-medium |
+
+### Piper parameters
+
+The dedicated **TTS page** in the Web UI exposes three adjustable Piper parameters:
+
+| Parameter | Default | Range | Effect |
+|-----------|---------|-------|--------|
+| Noise Scale | 0.667 | 0 – 1 | Controls randomness in audio generation. Higher values = more variation |
+| Length Scale | 1.0 | 0.1 – 5 | Speech speed. < 1 = faster, > 1 = slower |
+| Speaker Noise | 0.8 | 0 – 1 | Controls phoneme prediction noise. Higher values = more variation |
+
+Parameters are saved server-side and persist across sessions. Use the **Reset Defaults** button to restore defaults.
 
 ### Usage
 
-**Web UI:** Dashboard → *Text to Speech* card — select a voice, type text, click **🔊 Say**.
+**Web UI — TTS page:** Select a voice (grouped by language), adjust parameters, type text, click **Say**.
+
+**Web UI — Dashboard:** Quick TTS card with default voice and settings. Click the link to open the full TTS page.
 
 **Chat:**
 ```
 !say Hallo zusammen, willkommen im Kanal!
 !voice kerstin
-!voice thorsten
+!voice thorsten_angry
+!voice          (shows current voice + all available)
 ```
 
 The TTS voice selected in the WebUI / via `!voice` is the **interactive voice** used for `!say` and the WebUI Say button. It is independent of the voice used for event announcements (see below).
@@ -258,6 +289,7 @@ ts3musicandytbot/
 │   ├── Dockerfile              # Node 20, FFmpeg, yt-dlp, Piper TTS
 │   ├── server.js               # Express + Socket.io + chat command handler
 │   ├── config.js
+│   ├── voices.js               # Piper TTS voice registry (all voices + speaker IDs)
 │   ├── db/init.js              # SQLite schema + settings helpers
 │   ├── services/
 │   │   ├── ts3query.js         # ClientQuery TCP client (protocol parser, event emitter)
