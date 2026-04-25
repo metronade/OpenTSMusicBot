@@ -71,6 +71,7 @@ class AudioManager extends EventEmitter {
   async playFile(filePath, title = null, seekTo = 0) {
     const gen = ++this._generation;
     this._stopCurrent();
+    this._playing    = true;
     this._duration   = await this._probeDuration(filePath);
     if (this._generation !== gen) return { superseded: true };
     this._elapsed    = seekTo;
