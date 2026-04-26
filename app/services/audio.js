@@ -1,6 +1,6 @@
 'use strict';
 
-const { spawn }    = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path         = require('path');
 const fs           = require('fs');
 const EventEmitter = require('events');
@@ -206,6 +206,7 @@ class AudioManager extends EventEmitter {
     if (this._generation !== gen) return Promise.resolve({ superseded: true });
 
     const args = [
+      '-re',
       '-i', url,
       '-vn',
       '-ac', '2',
@@ -379,6 +380,11 @@ class AudioManager extends EventEmitter {
       this.track = null;
       this.emit('stopped');
     }
+    // Flush PulseAudio sink to discard any buffered audio
+    try {
+      spawnSync('pactl', ['--server', config.PULSE_SERVER, 'suspend-sink', config.PULSE_SINK, '1'], { timeout: 2000 });
+      spawnSync('pactl', ['--server', config.PULSE_SERVER, 'suspend-sink', config.PULSE_SINK, '0'], { timeout: 2000 });
+    } catch { /* ignore */ }
   }
 
   // ── Volume ─────────────────────────────────────────────────────────────────
