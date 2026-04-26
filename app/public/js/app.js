@@ -1274,6 +1274,10 @@ const DASHBOARD_CARDS = [
   { id: 'history',     label: 'Recent Plays' },
 ];
 
+let _dashEditMode = false;
+let _dashDragCard = null;
+let _dashPlaceholder = null;
+
 function getCardGrid() {
   return document.querySelector('#page-dashboard .card-grid');
 }
@@ -1282,11 +1286,13 @@ function getCardByDataId(id) {
   return document.querySelector(`#page-dashboard .card-grid .card[data-card="${id}"]`);
 }
 
+function getVisibleCards() {
+  return [...getCardGrid().querySelectorAll('.card[data-card]:not(.hidden)')];
+}
+
 function loadDashboardPrefs() {
   const grid = getCardGrid();
   if (!grid) return;
-
-  // Restore order
   try {
     const order = JSON.parse(localStorage.getItem('dashboardOrder'));
     if (Array.isArray(order)) {
@@ -1296,8 +1302,6 @@ function loadDashboardPrefs() {
       });
     }
   } catch { /* ignore */ }
-
-  // Restore hidden
   try {
     const hidden = JSON.parse(localStorage.getItem('dashboardHidden'));
     if (Array.isArray(hidden)) {
@@ -1323,45 +1327,108 @@ function saveDashboardHidden() {
   localStorage.setItem('dashboardHidden', JSON.stringify(hidden));
 }
 
+// Find which card the cursor is closest to, and whether to insert before or after
+function getDropTarget(grid, x, y) {
+  const cards = getVisibleCards();
+  let closest = null;
+  let closestDist = Infinity;
+  let insertBefore = true;
+
+  for (const card of cards) {
+    if (card === _dashDragCard || card.classList.contains('dragging')) continue;
+    const rect = card.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closest = card;
+      insertBefore = y < cy || (y >= cy && y <= rect.bottom && x < cx);
+    }
+  }
+  return { card: closest, insertBefore };
+}
+
+function movePlaceholder(x, y) {
+  const grid = getCardGrid();
+  if (!_dashPlaceholder || !_dashDragCard) return;
+  const { card, insertBefore } = getDropTarget(grid, x, y);
+  if (!card) {
+    grid.appendChild(_dashPlaceholder);
+    return;
+  }
+  if (insertBefore) {
+    grid.insertBefore(_dashPlaceholder, card);
+  } else {
+    grid.insertBefore(_dashPlaceholder, card.nextSibling);
+  }
+}
+
+function initDashboardEditMode() {
+  const btn = $('dashboard-edit-btn');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => {
+    _dashEditMode = !_dashEditMode;
+    const grid = getCardGrid();
+    grid.classList.toggle('edit-mode', _dashEditMode);
+    btn.classList.toggle('editing', _dashEditMode);
+    btn.textContent = _dashEditMode ? '✎ Done' : '✎ Edit';
+
+    // Enable/disable draggable
+    grid.querySelectorAll('.card[data-card]').forEach(card => {
+      card.draggable = _dashEditMode;
+    });
+
+    // Exit edit mode also closes the toggle dropdown
+    if (!_dashEditMode) {
+      $('dashboard-toggle-dropdown')?.classList.add('hidden');
+    }
+  });
+}
+
 function initDashboardDragDrop() {
   const grid = getCardGrid();
   if (!grid) return;
 
-  grid.querySelectorAll('.card[data-card]').forEach(card => {
-    card.draggable = true;
+  grid.addEventListener('dragstart', e => {
+    if (!_dashEditMode) { e.preventDefault(); return; }
+    const card = e.target.closest('.card[data-card]');
+    if (!card) return;
+    _dashDragCard = card;
+    card.classList.add('dragging');
 
-    card.addEventListener('dragstart', e => {
-      card.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', card.dataset.card);
-    });
+    // Create placeholder with same dimensions
+    _dashPlaceholder = document.createElement('div');
+    _dashPlaceholder.className = 'dash-placeholder';
+    _dashPlaceholder.style.height = card.offsetHeight + 'px';
+    if (card.classList.contains('span-2')) _dashPlaceholder.classList.add('span-2');
+    card.parentNode.insertBefore(_dashPlaceholder, card);
 
-    card.addEventListener('dragend', () => {
-      card.classList.remove('dragging');
-      grid.querySelectorAll('.card.drag-over').forEach(c => c.classList.remove('drag-over'));
-    });
+    // Hide original card visually (keep in DOM for data)
+    card.style.display = 'none';
+  });
 
-    card.addEventListener('dragover', e => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      if (card.classList.contains('dragging')) return;
-      grid.querySelectorAll('.card.drag-over').forEach(c => c.classList.remove('drag-over'));
-      card.classList.add('drag-over');
-    });
+  grid.addEventListener('dragover', e => {
+    if (!_dashEditMode || !_dashDragCard) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    movePlaceholder(e.clientX, e.clientY);
+  });
 
-    card.addEventListener('dragleave', () => {
-      card.classList.remove('drag-over');
-    });
+  grid.addEventListener('dragend', () => {
+    if (!_dashDragCard) return;
+    _dashDragCard.classList.remove('dragging');
+    _dashDragCard.style.display = '';
 
-    card.addEventListener('drop', e => {
-      e.preventDefault();
-      card.classList.remove('drag-over');
-      const fromId = e.dataTransfer.getData('text/plain');
-      const fromCard = getCardByDataId(fromId);
-      if (!fromCard || fromCard === card) return;
-      grid.insertBefore(fromCard, card);
-      saveDashboardOrder();
-    });
+    // Insert card where placeholder is
+    if (_dashPlaceholder && _dashPlaceholder.parentNode) {
+      _dashPlaceholder.parentNode.insertBefore(_dashDragCard, _dashPlaceholder);
+      _dashPlaceholder.remove();
+    }
+    _dashPlaceholder = null;
+    _dashDragCard = null;
+    saveDashboardOrder();
   });
 }
 
@@ -1406,5 +1473,6 @@ function initDashboardToggle() {
 }
 
 loadDashboardPrefs();
+initDashboardEditMode();
 initDashboardDragDrop();
 initDashboardToggle();

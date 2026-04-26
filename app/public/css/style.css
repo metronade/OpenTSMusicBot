@@ -465,7 +465,12 @@ code   { background: rgba(255,255,255,.08); padding: .1em .35em; border-radius: 
   margin-bottom: 1rem;
 }
 .dashboard-header h2 { margin-bottom: 0; }
+.dashboard-header-actions { display: flex; align-items: center; gap: .5rem; }
 .dashboard-toggle-wrap { position: relative; }
+#dashboard-toggle-btn.editing {
+  background: var(--accent);
+  color: #fff;
+}
 .dashboard-toggle-dropdown {
   position: absolute;
   top: calc(100% + 6px);
@@ -495,6 +500,24 @@ code   { background: rgba(255,255,255,.08); padding: .1em .35em; border-radius: 
 .dashboard-toggle-dropdown .toggle-item input[type=checkbox] {
   width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer;
 }
-.card-grid .card[data-card] { cursor: grab; }
-.card-grid .card[data-card].dragging { opacity: .4; }
-.card-grid .card[data-card].drag-over { border-top: 3px solid var(--accent); }
+
+/* Edit mode for dashboard cards */
+.card-grid.edit-mode .card[data-card] {
+  cursor: grab;
+  outline: 2px dashed var(--border);
+  outline-offset: -2px;
+  transition: outline-color .15s, transform .15s, opacity .15s;
+}
+.card-grid.edit-mode .card[data-card]:hover {
+  outline-color: var(--accent);
+}
+.card-grid.edit-mode .card[data-card].dragging {
+  opacity: .35;
+  transform: scale(.97);
+}
+.card-grid .dash-placeholder {
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: rgba(88,101,242,.06);
+  transition: height .15s;
+}
