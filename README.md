@@ -7,15 +7,21 @@ Audio from local files or YouTube is streamed via `yt-dlp` → `FFmpeg` → Puls
 
 | Category | Details |
 |----------|---------|
-| **Playback** | Local files, YouTube streams, named playlists, queue with auto-advance |
-| **Controls** | Volume, stop, loop, seek/scrub, channel move, nickname change |
+| **Playback** | Local files, YouTube streams, radio streams, named playlists, queue with auto-advance, drag-and-drop queue reorder |
+| **Controls** | Volume, stop, skip, loop, seek/scrub, channel move, nickname change |
+| **Radio** | Stream any internet radio URL, save and manage stations, play via dashboard or `!radio` chat command |
 | **TTS** | Text-to-speech via Piper — 10 voices in German & English, adjustable noise/speed/speaker-noise parameters |
 | **TTS Events** | Configurable join/leave announcements with `{username}` placeholder |
-| **Web UI** | Dashboard, drag-and-drop upload, playlist builder, user management |
+| **Web UI** | Dashboard, drag-and-drop upload, playlist builder, radio station management, user management |
+| **Themes** | Dark (default) and light theme toggle with persistent preference |
+| **Keyboard Shortcuts** | Space = stop, Left/Right arrows = seek ±5s, M = mute/unmute |
 | **Chat Commands** | Full set of `!`-commands usable directly in the TS3 channel |
-| **Auth** | Session-based login, admin/user roles, forced password change on first login |
-| **Files** | mp3, ogg, wav, flac, m4a — up to 50 MB per file, stored in `./music/` |
+| **Auth** | Session-based login, admin/user roles, forced password change on first login, session invalidation |
+| **Reliability** | FFmpeg watchdog (30s timeout), exponential reconnect backoff (2s–60s), upload validation via ffprobe |
+| **Security** | Rate limiting (login 5/15min, API 100/min), configurable log level |
+| **Files** | mp3, ogg, wav, flac, m4a — up to 50 MB per file, validated for audio content on upload |
 | **Identity** | Upload existing `identity.ini` or let the client auto-generate one |
+| **Admin Tools** | Database backup download, healthcheck endpoint, session management |
 | **Deployment** | Single `docker compose up --build` — two containers, three bind-mount volumes |
 
 ---
@@ -45,6 +51,7 @@ TS3_NICKNAME=MusicBot
 TS3_CHANNEL=Music          # channel to auto-join (leave empty for default)
 TS3_PASSWORD=              # server password if required
 APP_PORT=3000
+LOG_LEVEL=info             # debug | info | warn | error
 ```
 
 Generate a strong session secret:
@@ -72,10 +79,13 @@ Commands are typed in the **TS3 channel** where the bot is present.
 |---------|-------------|
 | `!play <name>` | Play a file from the library. No extension needed — `!play mysong` matches `mysong.mp3` |
 | `!yt <url>` | Stream audio from a YouTube URL |
+| `!radio <url\|name>` | Play a radio stream by URL or saved station name |
+| `!radio-list` | List all saved radio stations |
 | `!playlist <name>` | Play a named playlist created in the Web UI |
 | `!queue` | Show the first 5 entries of the current playback queue |
 | `!queue <name>` | Add a file to the queue by name |
-| `!loop` | Toggle loop for the current track (not available for YouTube streams) |
+| `!skip` | Skip to the next track in the queue |
+| `!loop` | Toggle loop for the current track (not available for YouTube/radio streams) |
 | `!vol <0-100>` | Set playback volume in real-time |
 | `!stop` | Stop current playback and clear the queue |
 | `!say <text>` | Read text aloud via TTS (max 300 characters) |
@@ -91,20 +101,23 @@ Commands are typed in the **TS3 channel** where the bot is present.
 
 | Section | Features |
 |---------|----------|
-| **Dashboard** | Bot status (Connect / Disconnect / Reconnect), now-playing with live progress bar and seek slider, volume slider, Quick Play with autocomplete, YouTube stream input, queue management, play history, channel switcher, nickname changer, quick TTS input |
+| **Dashboard** | Bot status (Connect / Disconnect / Reconnect), now-playing with live progress bar and seek slider, skip button, volume slider, Quick Play with autocomplete, YouTube stream input, radio stream input, queue management (drag & drop reorder), play history, channel switcher, nickname changer, quick TTS input |
 | **TTS** | Dedicated TTS page — voice selection (German & English), Piper parameter sliders (noise scale, length scale, speaker noise), text input |
+| **Radio** | Manage saved radio stations (add/delete), quick-play any stream URL |
 | **Library** | Drag-and-drop upload (mp3 / ogg / wav / flac / m4a, max 50 MB), searchable file list with per-file Play, +Queue and Delete buttons |
 | **Playlists** | Create / delete playlists, add / remove files, play entire playlist |
-| **Settings** *(admin)* | User management, chat feedback toggles, TTS event announcements, identity upload, YouTube cookies |
+| **Settings** *(admin)* | User management, session invalidation, chat feedback toggles, TTS event announcements, identity upload, YouTube cookies |
 
 ### Queue
 
-Files and YouTube URLs can be added to the queue from:
+Files, YouTube URLs, and radio streams can be added to the queue from:
 - **Dashboard** → Quick Play `+Q` or YouTube `+Q`
 - **Library** → `+Q` next to each file
 
-When nothing is playing, adding the first item starts playback immediately.  
-Use `!stop` (or the Stop button) to stop and clear the queue. Individual items can be removed from the Dashboard queue list.
+Queue items can be **reordered via drag & drop** on the Dashboard.
+
+When nothing is playing, adding the first item starts playback immediately.
+Use `!stop` (or the Stop button) to stop and clear the queue. `!skip` (or the Skip button) advances to the next queued track. Individual items can be removed from the Dashboard queue list.
 
 ### Play History
 
@@ -112,9 +125,45 @@ The Dashboard shows the last **10 played tracks** in the *Recent Plays* card. Cl
 
 ### Progress Bar & Seek
 
-For local files the progress bar shows elapsed / total time and doubles as a seek slider — drag or click to jump to any position. YouTube streams show elapsed time only (seeking requires re-buffering the stream).
+For local files the progress bar shows elapsed / total time and doubles as a seek slider — drag or click to jump to any position. YouTube streams show elapsed time only (seeking requires re-buffering the stream). Radio streams do not support seeking.
 
-### Chat Feedback
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Space` | Stop playback |
+| `←` / `→` | Seek backward/forward 5 seconds |
+| `M` | Toggle mute/unmute |
+
+Shortcuts are disabled while typing in an input field, textarea, or select.
+
+### Dark / Light Theme
+
+Click the moon/sun icon in the sidebar footer to toggle between dark and light themes. The preference is stored in `localStorage` and applied before the page renders (no flash).
+
+### Now Playing in Tab Title
+
+When a track is playing, the browser tab title updates to show the track name: `Song Name — TS3 Music Bot`. When idle, it reverts to `TS3 Music Bot`.
+
+---
+
+## Radio Streams
+
+The bot can play any internet radio stream (Icecast/Shoutcast/etc.) by URL or by saved station name.
+
+### Adding stations
+
+**Web UI → Radio page:** Enter a station name and stream URL, then click **Add**.
+
+Stations appear in the list and can be played or deleted from there.
+
+### Playing radio
+
+- **Dashboard:** Enter a stream URL in the "Radio Stream" card, or select a saved station from the dropdown
+- **Radio page:** Click ▶ next to a station, or use the Quick Play URL input
+- **Chat:** `!radio <url>` or `!radio <station-name>` to play, `!radio-list` to see saved stations
+
+Radio streams play continuously until stopped or another track is started. Loop and seek are not available for radio streams.
 
 **Settings → Chat Feedback** lets admins toggle which bot actions send a reply in the TS3 channel:
 
@@ -286,20 +335,22 @@ ts3musicandytbot/
 ├── config/                     # SQLite DB + sessions (bind-mount)
 │
 ├── app/                        # Node.js backend + Web UI
-│   ├── Dockerfile              # Node 20, FFmpeg, yt-dlp, Piper TTS
+│   ├── Dockerfile              # Node 20, FFmpeg, yt-dlp, Piper TTS, healthcheck
 │   ├── server.js               # Express + Socket.io + chat command handler
-│   ├── config.js
+│   ├── config.js               # Env vars + LOG_LEVEL
 │   ├── voices.js               # Piper TTS voice registry (all voices + speaker IDs)
-│   ├── db/init.js              # SQLite schema + settings helpers
+│   ├── db/init.js              # SQLite schema + radios table + settings helpers
 │   ├── services/
+│   │   ├── logger.js           # Level-aware logger utility
 │   │   ├── ts3query.js         # ClientQuery TCP client (protocol parser, event emitter)
 │   │   └── audio.js            # FFmpeg / yt-dlp / Piper process manager
 │   ├── routes/
-│   │   ├── auth.js             # Login / logout / change-password
-│   │   ├── bot.js              # Playback, volume, seek, TTS, nickname, channel
-│   │   ├── files.js            # Upload / list / delete
-│   │   └── playlists.js        # CRUD + file ordering
-│   └── public/                 # Single-page Web UI (vanilla JS)
+│   │   ├── auth.js             # Login / logout / change-password / session invalidation
+│   │   ├── bot.js              # Playback, skip, volume, seek, TTS, radio, queue reorder
+│   │   ├── files.js            # Upload (ffprobe validated) / list / delete
+│   │   ├── playlists.js        # CRUD + file ordering
+│   │   └── radios.js           # CRUD for radio stations
+│   └── public/                 # Single-page Web UI (vanilla JS, dark/light themes)
 │
 └── ts3client/                  # Headless TS3 client container
     ├── Dockerfile              # Ubuntu 22.04 + Xvfb + PulseAudio + TS3 3.6.2
@@ -423,6 +474,68 @@ docker compose build --no-cache ts3client
 
 ---
 
+## Reliability
+
+### FFmpeg Watchdog
+
+A 30-second watchdog monitors FFmpeg progress events. If no progress is received within 30 seconds, FFmpeg is killed and an error is emitted. This prevents the bot from hanging on stalled streams.
+
+### Reconnect Backoff
+
+The TS3 ClientQuery connection uses exponential backoff on reconnect: starting at 2 seconds, doubling each attempt, capped at 60 seconds. The counter resets on successful connection.
+
+### Upload Validation
+
+Uploaded files are validated with `ffprobe` to ensure they contain at least one audio stream. Corrupted or non-audio files are rejected before they enter the library.
+
+### yt-dlp Error Hints
+
+When `yt-dlp` fails, the bot parses the error output and provides user-friendly hints:
+- **Cookies required** → suggests uploading `cookies.txt`
+- **Private / age-restricted** → explains the limitation
+- **Geo-blocked** → notes geographic restrictions
+
+---
+
+## Admin Tools
+
+### Health Check
+
+The `/api/health` endpoint returns bot status without authentication:
+
+```json
+{ "status": "ok", "ts3": true, "uptime": 3600, "version": "1.0.0" }
+```
+
+The Dockerfile includes a built-in `HEALTHCHECK` instruction using this endpoint.
+
+### Database Backup
+
+**Settings page** or direct API call (`GET /api/backup/db`, admin only) downloads a consistent SQLite snapshot.
+
+### Session Invalidation
+
+**Settings → User Management → Logout All Other Sessions** kills all sessions except the current one. Useful after a password change.
+
+### Rate Limiting
+
+- Login: 5 attempts per 15 minutes per IP
+- General API: 100 requests per minute per IP
+- Health endpoint: unlimited (no auth required)
+
+### Configurable Logging
+
+Set `LOG_LEVEL` in `.env` to control verbosity:
+
+| Level | Output |
+|-------|--------|
+| `debug` | Everything |
+| `info` | Normal operations (default) |
+| `warn` | Warnings and above |
+| `error` | Errors only |
+
+---
+
 ## Security Notes
 
 - Change `SESSION_SECRET` to a strong random value before first run.
@@ -440,4 +553,4 @@ npm install
 TS3_QUERY_HOST=localhost npm run dev
 ```
 
-Dependencies: `express`, `socket.io`, `better-sqlite3`, `bcryptjs`, `express-session`, `connect-sqlite3`, `multer`, `uuid`.
+Dependencies: `express`, `socket.io`, `better-sqlite3`, `bcryptjs`, `express-session`, `connect-sqlite3`, `express-rate-limit`, `multer`, `uuid`.

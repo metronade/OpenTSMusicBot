@@ -1,50 +1,83 @@
 'use strict';
 
 const path         = require('path');
+const os           = require('os');
+const fs           = require('fs');
 const http         = require('http');
 const express      = require('express');
 const { Server: SocketIO } = require('socket.io');
 const session      = require('express-session');
 const SqliteStore  = require('connect-sqlite3')(session);
-const bcrypt       = require('bcryptjs');
+const rateLimit    = require('express-rate-limit');
 
 const config    = require('./config');
 const db        = require('./db/init');
 const ts3query  = require('./services/ts3query');
 const audio     = require('./services/audio');
 const { getVoice, getAllVoiceIds, VOICES } = require('./voices');
+const log       = require('./services/logger').createLogger('[App]');
 
 const authRouter      = require('./routes/auth');
 const botRouter       = require('./routes/bot');
 const filesRouter     = require('./routes/files');
 const playlistsRouter = require('./routes/playlists');
+const radiosRouter    = require('./routes/radios');
+
+const { version } = require('./package.json');
 
 // ── Express + Socket.io setup ────────────────────────────────────────────────
 const app    = express();
 const server = http.createServer(app);
 const io     = new SocketIO(server, { cors: { origin: false } });
 
-// Sessions are stored in the same SQLite file as the rest of the app data
-// so they survive container restarts and don't need a separate file.
 const sessionMiddleware = session({
   secret:            config.SESSION_SECRET,
   resave:            false,
   saveUninitialized: false,
   store: new SqliteStore({
-    db:    path.basename(config.DB_PATH),   // e.g. "db.sqlite"
-    dir:   path.dirname(config.DB_PATH),    // e.g. "/app/config"
+    db:    path.basename(config.DB_PATH),
+    dir:   path.dirname(config.DB_PATH),
     table: 'sessions',
   }),
   cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: true, sameSite: 'lax' },
 });
 
-// Share sessions with Socket.io
 app.use(sessionMiddleware);
 io.use((socket, next) => sessionMiddleware(socket.request, socket.request.res || {}, next));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Health endpoint (no auth, no rate limit) ─────────────────────────────────
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    ts3: ts3query.isConnected(),
+    uptime: Math.floor(process.uptime()),
+    version,
+  });
+});
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: { error: 'Too many requests. Slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/auth/login', loginLimiter);
+app.use('/api/', apiLimiter);
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
@@ -54,7 +87,7 @@ function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (!req.session?.userId) {
-    console.warn('[Auth] requireAdmin: no session for', req.method, req.path);
+    log.warn('requireAdmin: no session for', req.method, req.path);
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const user = db.getUserById(req.session.userId);
@@ -67,6 +100,7 @@ app.use('/api/auth',      authRouter);
 app.use('/api/bot',       requireAuth, botRouter);
 app.use('/api/files',     requireAuth, filesRouter);
 app.use('/api/playlists', requireAuth, playlistsRouter);
+app.use('/api/radios',    requireAuth, radiosRouter);
 
 // User management (admin only)
 app.get('/api/users', requireAdmin, (req, res) => {
@@ -95,27 +129,36 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Backup (admin only)
+app.get('/api/backup/db', requireAdmin, (req, res) => {
+  const backupPath = path.join(os.tmpdir(), `backup_${Date.now()}.sqlite`);
+  try {
+    db.db.backup(backupPath).then(() => {
+      const filename = `ts3bot_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`;
+      res.download(backupPath, filename, (err) => {
+        try { fs.unlinkSync(backupPath); } catch { /* ignore */ }
+        if (err) log.error('Backup download error:', err.message);
+      });
+    }).catch(err => {
+      res.status(500).json({ error: 'Backup failed: ' + err.message });
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Backup failed: ' + err.message });
+  }
+});
+
 // Identity upload
 app.post('/api/identity/upload', requireAdmin, (req, res) => {
   const multer = require('multer');
-  const fs     = require('fs');
-  // Write the temp file directly into the identities volume to avoid
-  // cross-device rename errors (EXDEV: tmpfs → bind mount).
-  const upload = multer({
-    dest: '/app/identities/',
-    limits: { fileSize: 1024 * 1024 },
-  });
+  const upload = multer({ dest: '/app/identities/', limits: { fileSize: 1024 * 1024 } });
   upload.single('identity')(req, res, err => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.file) return res.status(400).json({ error: 'No file provided' });
-
     const dest = '/app/identities/identity.ini';
     try {
-      // multer already wrote to /app/identities/<uuid>; rename within the same fs
       fs.renameSync(req.file.path, dest);
       res.json({ ok: true, message: 'Identity uploaded. Restart the ts3client container to apply.' });
     } catch (e) {
-      // Clean up the orphaned upload on error
       try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
       res.status(500).json({ error: e.message });
     }
@@ -124,7 +167,6 @@ app.post('/api/identity/upload', requireAdmin, (req, res) => {
 
 // YouTube cookies upload / status / delete
 app.get('/api/cookies/status', requireAdmin, (req, res) => {
-  const fs = require('fs');
   try {
     const stat = fs.statSync(config.COOKIES_PATH);
     res.json({ present: true, uploadedAt: stat.mtime });
@@ -135,11 +177,7 @@ app.get('/api/cookies/status', requireAdmin, (req, res) => {
 
 app.post('/api/cookies/upload', requireAdmin, (req, res) => {
   const multer = require('multer');
-  const fs     = require('fs');
-  const upload = multer({
-    dest: path.dirname(config.COOKIES_PATH),
-    limits: { fileSize: 5 * 1024 * 1024 },
-  });
+  const upload = multer({ dest: path.dirname(config.COOKIES_PATH), limits: { fileSize: 5 * 1024 * 1024 } });
   upload.single('cookies')(req, res, err => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.file) return res.status(400).json({ error: 'No file provided' });
@@ -154,7 +192,6 @@ app.post('/api/cookies/upload', requireAdmin, (req, res) => {
 });
 
 app.delete('/api/cookies', requireAdmin, (req, res) => {
-  const fs = require('fs');
   try { fs.unlinkSync(config.COOKIES_PATH); } catch { /* already gone */ }
   res.json({ ok: true });
 });
@@ -218,7 +255,6 @@ io.on('connection', socket => {
   });
 });
 
-// Forward service events → all clients
 ts3query.on('connected',    data     => io.emit('bot:connected',    data));
 ts3query.on('disconnected', ()       => io.emit('bot:disconnected'));
 ts3query.on('channels',     channels => io.emit('bot:channels',     channels));
@@ -274,7 +310,7 @@ ts3query.on('textmessage', async payload => {
         const pr = await audio.playFile(record.path, record.original_name);
         if (pr?.superseded) return;
         io.emit('bot:playing', audio.getCurrentTrack());
-        await reply(`▶ Now playing: ${record.original_name}`, 'play');
+        await reply(`Now playing: ${record.original_name}`, 'play');
         break;
       }
 
@@ -284,7 +320,27 @@ ts3query.on('textmessage', async payload => {
         const yr = await audio.playYoutube(ytUrl);
         if (yr?.superseded) return;
         io.emit('bot:playing', audio.getCurrentTrack());
-        await reply(`▶ Streaming: ${ytUrl}`, 'youtube');
+        await reply(`Streaming: ${ytUrl}`, 'youtube');
+        break;
+      }
+
+      case '!radio': {
+        if (!arg) { await reply('Usage: !radio <url|name>'); return; }
+        let radioUrl = arg;
+        let radioTitle = arg;
+        const station = db.getRadioByName(arg);
+        if (station) { radioUrl = station.url; radioTitle = station.name; }
+        else if (!audio._isValidUrl(arg)) { await reply('Unknown station or invalid URL.'); return; }
+        await audio.playRadio(radioUrl, radioTitle);
+        await reply(`Radio: ${radioTitle}`, 'play');
+        break;
+      }
+
+      case '!radio-list': {
+        const radios = db.getAllRadios();
+        if (!radios.length) { await reply('No radio stations saved.'); return; }
+        const list = radios.map(r => `${r.name}`).join(' | ');
+        await reply(`Radios: ${list}`);
         break;
       }
 
@@ -295,7 +351,7 @@ ts3query.on('textmessage', async payload => {
         const objects = db.getPlaylistFileObjects(pl.id);
         if (!objects.length) { await reply('Playlist is empty.'); return; }
         await audio.playPlaylist(objects);
-        await reply(`▶ Starting playlist: ${pl.name} (${objects.length} tracks)`, 'playlist');
+        await reply(`Starting playlist: ${pl.name} (${objects.length} tracks)`, 'playlist');
         break;
       }
 
@@ -310,6 +366,12 @@ ts3query.on('textmessage', async payload => {
       case '!stop': {
         audio.stop();
         await reply('Stopped.', 'stop');
+        break;
+      }
+
+      case '!skip': {
+        audio.skip();
+        await reply('Skipped.', 'play');
         break;
       }
 
@@ -330,9 +392,12 @@ ts3query.on('textmessage', async payload => {
 
       case '!loop': {
         const track = audio.getCurrentTrack();
-        if (track && track.type === 'youtube') { await reply('Loop ist für YouTube-Streams nicht verfügbar.'); return; }
+        if (track && (track.type === 'youtube' || track.type === 'radio')) {
+          await reply('Loop not available for streams.');
+          return;
+        }
         const looping = audio.setLoop(!audio.getLoop());
-        await reply(looping ? '🔁 Loop aktiviert.' : 'Loop deaktiviert.');
+        await reply(looping ? 'Loop enabled.' : 'Loop disabled.');
         break;
       }
 
@@ -347,23 +412,23 @@ ts3query.on('textmessage', async payload => {
         const v = arg.toLowerCase().trim();
         if (!v || !getVoice(v)) {
           const names = VOICES.map(vc => vc.id).join(', ');
-          await reply(`Aktuelle Stimme: ${audio.getVoice()} – Wechseln mit: !voice <name>\nVerfügbar: ${names}`);
+          await reply(`Current voice: ${audio.getVoice()} – Change with: !voice <name>\nAvailable: ${names}`);
           return;
         }
         audio.setVoice(v);
-        await reply(`Stimme gewechselt: ${v}`);
+        await reply(`Voice changed: ${v}`);
         break;
       }
 
       case '!list': {
         const files     = db.getAllFiles().map(f => f.original_name);
         const playlists = db.getAllPlaylists().map(p => p.name);
-        if (!files.length && !playlists.length) { await reply('Keine Dateien oder Playlists vorhanden.'); return; }
+        if (!files.length && !playlists.length) { await reply('No files or playlists.'); return; }
         if (files.length) {
           const chunks = [];
           for (let i = 0; i < files.length; i += 5)
             chunks.push(files.slice(i, i + 5).join(' | '));
-          await ts3query.sendChannelMessage(`Dateien (${files.length}): ${chunks[0]}`);
+          await ts3query.sendChannelMessage(`Files (${files.length}): ${chunks[0]}`);
           for (const c of chunks.slice(1)) await ts3query.sendChannelMessage(c);
         }
         if (playlists.length)
@@ -374,18 +439,21 @@ ts3query.on('textmessage', async payload => {
       case '!help': {
         const lines = [
           '=== Music Bot Commands ===',
-          '!list                      – Dateien und Playlists anzeigen',
-          '!play <name>               – Datei sofort abspielen',
-          '!queue                     – Warteschlange anzeigen (max. 5)',
-          '!queue <name>              – Datei in Warteschlange einreihen',
-          '!loop                      – Loop für aktuellen Song an/aus',
-          '!yt <url>                  – YouTube-Audio streamen',
-          '!playlist <name>           – Playlist abspielen',
-          '!vol <0-100>               – Lautstärke einstellen',
-          '!stop                      – Wiedergabe stoppen',
-          '!say <text>                – Text vorlesen (TTS)',
-          '!voice <name>              – TTS-Stimme wechseln',
-          '!help                      – Alle Commands anzeigen',
+          '!list                      – Files and playlists',
+          '!play <name>               – Play a file',
+          '!queue                     – Show queue (max 5)',
+          '!queue <name>              – Add file to queue',
+          '!skip                      – Skip to next track',
+          '!loop                      – Toggle loop for current song',
+          '!yt <url>                  – Stream YouTube audio',
+          '!radio <url|name>          – Play radio stream',
+          '!radio-list                – List saved radio stations',
+          '!playlist <name>           – Play a playlist',
+          '!vol <0-100>               – Set volume',
+          '!stop                      – Stop playback',
+          '!say <text>                – Text to speech (TTS)',
+          '!voice <name>              – Change TTS voice',
+          '!help                      – Show all commands',
         ];
         for (const line of lines) {
           await ts3query.sendChannelMessage(line);
@@ -395,18 +463,16 @@ ts3query.on('textmessage', async payload => {
       }
     }
   } catch (err) {
-    console.error('[Command]', cmd, err.message);
+    log.error('Command', cmd, err.message);
     await reply(`Error: ${err.message}`);
   }
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 server.listen(config.PORT, '0.0.0.0', () => {
-  console.log(`[App] Web UI listening on http://0.0.0.0:${config.PORT}`);
-  console.log(`[App] Database : ${config.DB_PATH}`);
-  console.log('[App] Default login: admin / admin  (change on first login)');
-
-  // Attempt TS3 ClientQuery connection
+  log.info(`Web UI listening on http://0.0.0.0:${config.PORT}`);
+  log.info(`Database: ${config.DB_PATH}`);
+  log.info('Default login: admin / admin  (change on first login)');
   ts3query.connect();
 });
 

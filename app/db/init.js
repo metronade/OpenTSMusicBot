@@ -52,6 +52,13 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS radios (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    UNIQUE NOT NULL,
+    url        TEXT    NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 `);
 
 // ── Seed default admin (admin / admin) ────────────────────────────────────────
@@ -98,6 +105,14 @@ const stmts = {
   removeFileFromPlaylist: db.prepare('DELETE FROM playlist_files WHERE playlist_id = ? AND file_id = ?'),
   clearPlaylist:     db.prepare('DELETE FROM playlist_files WHERE playlist_id = ?'),
   reorderPlaylist:   db.prepare('UPDATE playlist_files SET order_index = ? WHERE playlist_id = ? AND file_id = ?'),
+
+  // Radio helpers
+  getAllRadios:      db.prepare('SELECT * FROM radios ORDER BY name'),
+  getRadioById:     db.prepare('SELECT * FROM radios WHERE id = ?'),
+  getRadioByName:   db.prepare('SELECT * FROM radios WHERE name = ?'),
+  createRadio:      db.prepare('INSERT INTO radios (name, url) VALUES (?, ?)'),
+  updateRadio:      db.prepare('UPDATE radios SET name = ?, url = ? WHERE id = ?'),
+  deleteRadio:      db.prepare('DELETE FROM radios WHERE id = ?'),
 };
 
 // ── File search (for !play without extension) ─────────────────────────────────
@@ -205,4 +220,11 @@ module.exports = {
   removeFileFromPlaylist: (plId, fileId) => stmts.removeFileFromPlaylist.run(plId, fileId),
   clearPlaylist:     (plId)     => stmts.clearPlaylist.run(plId),
   reorderPlaylist:   (plId, fileId, idx) => stmts.reorderPlaylist.run(idx, plId, fileId),
+
+  getAllRadios:      ()         => stmts.getAllRadios.all(),
+  getRadioById:     (id)       => stmts.getRadioById.get(id),
+  getRadioByName:   (name)     => stmts.getRadioByName.get(name),
+  createRadio:      (name, url) => stmts.createRadio.run(name, url),
+  updateRadio:      (id, name, url) => stmts.updateRadio.run(name, url, id),
+  deleteRadio:      (id)       => stmts.deleteRadio.run(id),
 };

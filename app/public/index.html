@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TS3 Music Bot</title>
   <link rel="stylesheet" href="/css/style.css" />
+  <script>(function(){var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t);})()</script>
 </head>
 <body>
 
@@ -47,9 +48,11 @@
       <li><a href="#" data-page="library">Library</a></li>
       <li><a href="#" data-page="playlists">Playlists</a></li>
       <li><a href="#" data-page="tts">TTS</a></li>
+      <li><a href="#" data-page="radio">Radio</a></li>
       <li><a href="#" data-page="settings" id="nav-settings" class="admin-only hidden">Settings</a></li>
     </ul>
     <div class="sidebar-footer">
+      <button id="theme-toggle" class="btn btn-secondary btn-sm" title="Toggle theme">&#9790;</button>
       <span id="sidebar-user"></span>
       <button id="logout-btn">Logout</button>
     </div>
@@ -86,6 +89,7 @@
           </div>
           <div class="controls-row">
             <button id="btn-stop" class="btn btn-danger">⏹ Stop</button>
+            <button id="btn-skip" class="btn btn-secondary">⏭ Skip</button>
             <label id="loop-label" class="loop-label hidden">
               <input id="loop-checkbox" type="checkbox" />
               🔁 Loop
@@ -123,6 +127,22 @@
             <button id="yt-play-btn"  class="btn">▶</button>
             <button id="yt-queue-btn" class="btn btn-secondary" title="Add to queue">+Q</button>
           </div>
+        </div>
+
+        <!-- Radio Stream -->
+        <div class="card">
+          <div class="card-title">Radio Stream</div>
+          <div class="input-row">
+            <input id="radio-url" type="text" placeholder="Stream URL" />
+            <button id="radio-play-btn" class="btn">▶</button>
+          </div>
+          <div class="input-row" style="margin-top:.5rem">
+            <select id="radio-station-select">
+              <option value="">— saved station —</option>
+            </select>
+            <button id="radio-station-play-btn" class="btn">▶ Station</button>
+          </div>
+          <a href="#" data-page="radio" class="link" style="display:inline-block;margin-top:.5rem;font-size:12px">Manage stations</a>
         </div>
 
         <!-- Channel Move -->
@@ -296,6 +316,33 @@
       </div>
     </section>
 
+    <!-- ── RADIO ────────────────────────────────────────────────────────────── -->
+    <section id="page-radio" class="page hidden">
+      <h2>Radio Stations</h2>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">Saved Stations</div>
+          <div class="input-row">
+            <input id="radio-new-name" type="text" placeholder="Station name" />
+            <input id="radio-new-url"  type="text" placeholder="Stream URL" />
+            <button id="radio-add-btn" class="btn">Add</button>
+          </div>
+          <ul id="radio-list" class="radio-list">
+            <li class="empty-msg">No radio stations saved.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Quick Play</div>
+          <div class="input-row">
+            <input id="radio-quick-url" type="text" placeholder="Stream URL" />
+            <button id="radio-quick-play-btn" class="btn">▶ Play</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ── SETTINGS (admin) ────────────────────────────────────────────────── -->
     <section id="page-settings" class="page hidden">
       <h2>Settings</h2>
@@ -318,6 +365,8 @@
           <button type="submit" class="btn">Create</button>
         </form>
         <p id="create-user-error" class="error hidden"></p>
+        <hr />
+        <button id="invalidate-sessions-btn" class="btn btn-secondary btn-sm">Logout All Other Sessions</button>
       </div>
 
       <div class="card">

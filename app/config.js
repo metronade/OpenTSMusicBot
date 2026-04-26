@@ -21,4 +21,6 @@ module.exports = {
 
   UPLOAD_MAX_MB:   50,
   ALLOWED_MIMETYPES: new Set(['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/x-wav', 'audio/flac', 'audio/mp4']),
+
+  LOG_LEVEL:       process.env.LOG_LEVEL || 'info',
 };

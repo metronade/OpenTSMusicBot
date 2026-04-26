@@ -422,3 +422,37 @@ code   { background: rgba(255,255,255,.08); padding: .1em .35em; border-radius: 
   accent-color: var(--accent);
 }
 .slider-group .subtitle { margin-top: .2rem; }
+
+/* ── Light theme ───────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:        #f5f6fa;
+  --bg-card:   #ffffff;
+  --bg-hover:  #e8eaf0;
+  --accent:    #5865f2;
+  --accent-h:  #4752c4;
+  --danger:    #ed4245;
+  --success:   #2ecc71;
+  --warning:   #f1c40f;
+  --text:      #1a1d27;
+  --text-muted:#6b7280;
+  --border:    #d1d5db;
+}
+
+/* ── Queue drag & drop ─────────────────────────────────────────────────────── */
+.queue-item.dragging { opacity: 0.4; }
+.queue-item.drag-over { border-top: 2px solid var(--accent); }
+
+/* ── Radio list ────────────────────────────────────────────────────────────── */
+.radio-list { list-style: none; margin-top: .5rem; }
+.radio-item {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .45rem .5rem;
+  border-radius: 6px;
+}
+.radio-item:hover { background: var(--bg-hover); }
+.radio-name { flex: 1; font-size: 13px; font-weight: 600; }
+.radio-url  { flex: 2; font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.radio-actions button { opacity: 0; transition: opacity .15s; }
+.radio-item:hover .radio-actions button { opacity: 1; }

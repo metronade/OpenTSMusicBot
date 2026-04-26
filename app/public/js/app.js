@@ -34,6 +34,7 @@ function formatDate(iso) {
 let currentUser  = null;
 let allFiles     = [];
 let allPlaylists = [];
+let allRadios    = [];
 let voiceGroups  = {};  // { de: [{id, label, langLabel}], en: [...] }
 let activePl     = null;
 let _seeking     = false;
@@ -51,6 +52,7 @@ function navigateTo(pg) {
   if (pg === 'playlists') loadPlaylists();
   if (pg === 'settings')  loadSettings();
   if (pg === 'tts')       loadTtsPage();
+  if (pg === 'radio')     loadRadios();
 }
 
 document.querySelectorAll('#sidebar a[data-page]').forEach(link => {
@@ -64,7 +66,29 @@ document.querySelectorAll('#sidebar a[data-page]').forEach(link => {
 document.addEventListener('click', e => {
   const link = e.target.closest('a.tts-page-link[data-page]');
   if (link) { e.preventDefault(); navigateTo(link.dataset.page); }
+  // Generic data-page links (radio manage link, etc.)
+  const pgLink = e.target.closest('a[data-page]:not(.tts-page-link)');
+  if (pgLink && !pgLink.closest('#sidebar')) { e.preventDefault(); navigateTo(pgLink.dataset.page); }
 });
+
+// ── Theme toggle ───────────────────────────────────────────────────────────────
+$('theme-toggle').addEventListener('click', () => {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  if (current === 'light') {
+    html.removeAttribute('data-theme');
+    localStorage.removeItem('theme');
+    $('theme-toggle').innerHTML = '&#9790;';
+  } else {
+    html.setAttribute('data-theme', 'light');
+    localStorage.setItem('theme', 'light');
+    $('theme-toggle').innerHTML = '&#9788;';
+  }
+});
+// Sync icon on load
+if (document.documentElement.getAttribute('data-theme') === 'light') {
+  $('theme-toggle').innerHTML = '&#9788;';
+}
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 $('login-form').addEventListener('submit', async e => {
@@ -228,7 +252,9 @@ function setBotStatus(online) {
 
 function setNowPlaying(track) {
   $('now-playing-title').textContent = track ? track.title : '— idle —';
-  $('now-playing-type').textContent  = track ? (track.type === 'youtube' ? '▶ YouTube Stream' : '▶ File') : '';
+  const typeLabels = { youtube: '▶ YouTube Stream', radio: '📻 Radio Stream', file: '▶ File' };
+  $('now-playing-type').textContent = track ? (typeLabels[track.type] || '▶ ' + track.type) : '';
+  document.title = track ? `${track.title} — TS3 Music Bot` : 'TS3 Music Bot';
   if (!track) { clearProgress(); }
   const loopLabel = $('loop-label');
   if (track && track.type === 'file') {
@@ -329,6 +355,55 @@ $('btn-reconnect').addEventListener('click', async () => {
 $('btn-stop').addEventListener('click', async () => {
   try { await api('POST', '/api/bot/stop'); toast('Stopped.'); }
   catch (e) { toast(e.message, 'error'); }
+});
+
+// Skip
+$('btn-skip').addEventListener('click', async () => {
+  try { await api('POST', '/api/bot/skip'); toast('Skipped.'); }
+  catch (e) { toast(e.message, 'error'); }
+});
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────────────────
+let _mutedVol = null;
+document.addEventListener('keydown', e => {
+  const tag = e.target.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+  if (e.code === 'Space') {
+    e.preventDefault();
+    $('btn-stop').click();
+  } else if (e.code === 'ArrowRight') {
+    e.preventDefault();
+    const slider = $('progress-seek');
+    if (!slider.disabled) {
+      const next = Math.min(parseInt(slider.value) + 5, parseInt(slider.max));
+      slider.value = next;
+      $('progress-time').textContent = fmtTime(next);
+      api('POST', '/api/bot/seek', { seconds: next }).catch(() => {});
+    }
+  } else if (e.code === 'ArrowLeft') {
+    e.preventDefault();
+    const slider = $('progress-seek');
+    if (!slider.disabled) {
+      const prev = Math.max(parseInt(slider.value) - 5, 0);
+      slider.value = prev;
+      $('progress-time').textContent = fmtTime(prev);
+      api('POST', '/api/bot/seek', { seconds: prev }).catch(() => {});
+    }
+  } else if (e.code === 'KeyM') {
+    e.preventDefault();
+    if (_mutedVol === null) {
+      _mutedVol = parseInt($('vol-slider').value);
+      api('POST', '/api/bot/volume', { volume: 0 }).catch(() => {});
+      $('vol-slider').value = 0;
+      $('vol-label').textContent = '0%';
+    } else {
+      api('POST', '/api/bot/volume', { volume: _mutedVol }).catch(() => {});
+      $('vol-slider').value = _mutedVol;
+      $('vol-label').textContent = _mutedVol + '%';
+      _mutedVol = null;
+    }
+  }
 });
 
 // Volume slider (debounced)
@@ -460,19 +535,48 @@ function renderQueue(queue) {
     return;
   }
 
+  const typeIcons = { youtube: '▶YT', radio: '📻', file: '♪' };
+
   queue.forEach((item, i) => {
     const li = document.createElement('li');
     li.className = 'queue-item';
+    li.draggable = true;
+    li.dataset.idx = i;
     li.innerHTML = `
       <span class="queue-num">${i + 1}</span>
-      <span class="queue-type-icon">${item.type === 'youtube' ? '▶YT' : '♪'}</span>
+      <span class="queue-type-icon">${typeIcons[item.type] || '♪'}</span>
       <span class="queue-title">${item.title}</span>
       <button class="btn btn-danger btn-sm queue-remove" data-idx="${i}" title="Remove">✕</button>
     `;
-    li.querySelector('.queue-remove').addEventListener('click', async () => {
+    li.querySelector('.queue-remove').addEventListener('click', async (e) => {
+      e.stopPropagation();
       try { await api('DELETE', `/api/bot/queue/${i}`); }
       catch (e) { toast(e.message, 'error'); }
     });
+
+    // Drag & drop reorder
+    li.addEventListener('dragstart', e => {
+      li.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', i);
+    });
+    li.addEventListener('dragend', () => li.classList.remove('dragging'));
+    li.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      li.classList.add('drag-over');
+    });
+    li.addEventListener('dragleave', () => li.classList.remove('drag-over'));
+    li.addEventListener('drop', async e => {
+      e.preventDefault();
+      li.classList.remove('drag-over');
+      const from = parseInt(e.dataTransfer.getData('text/plain'));
+      const to = i;
+      if (from === to) return;
+      try { await api('PUT', '/api/bot/queue/reorder', { from, to }); }
+      catch (err) { toast(err.message, 'error'); }
+    });
+
     ul.appendChild(li);
   });
 }
@@ -488,8 +592,9 @@ function renderHistory(history) {
   history.forEach(item => {
     const li = document.createElement('li');
     li.className = 'history-item';
+    const typeIcons = { youtube: '▶YT', radio: '📻', file: '♪' };
     li.innerHTML = `
-      <span class="history-type">${item.type === 'youtube' ? '▶YT' : '♪'}</span>
+      <span class="history-type">${typeIcons[item.type] || '♪'}</span>
       <span class="history-title" title="${item.title}">${item.title}</span>
       <button class="btn btn-sm history-replay" title="Play again">▶</button>
     `;
@@ -499,6 +604,9 @@ function renderHistory(history) {
           toast('Fetching stream…');
           await api('POST', '/api/bot/yt', { url: item.title });
           toast('Streaming!', 'success');
+        } else if (item.type === 'radio') {
+          await api('POST', '/api/bot/radio', { url: item.path || item.title, name: item.title });
+          toast('Playing radio!', 'success');
         } else {
           const name = item.title.replace(/\.[^.]+$/, '');
           await api('POST', '/api/bot/play', { name });
@@ -1030,4 +1138,123 @@ $('identity-form').addEventListener('submit', async e => {
     $('identity-status').style.color = 'var(--danger)';
     $('identity-status').classList.remove('hidden');
   }
+});
+
+// ── Session Invalidation ─────────────────────────────────────────────────────
+$('invalidate-sessions-btn')?.addEventListener('click', async () => {
+  if (!confirm('Log out all other sessions?')) return;
+  try {
+    await api('POST', '/api/auth/invalidate-sessions');
+    toast('All other sessions have been logged out.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+});
+
+// ── Radio Page ─────────────────────────────────────────────────────────────────
+async function loadRadios() {
+  try {
+    allRadios = await api('GET', '/api/radios');
+    renderRadios();
+    populateRadioStationSelect();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function renderRadios() {
+  const ul = $('radio-list');
+  if (!ul) return;
+  ul.innerHTML = '';
+  if (!allRadios.length) {
+    ul.innerHTML = '<li class="empty-msg">No radio stations saved.</li>';
+    return;
+  }
+  allRadios.forEach(r => {
+    const li = document.createElement('li');
+    li.className = 'radio-item';
+    li.innerHTML = `
+      <span class="radio-name">${r.name}</span>
+      <span class="radio-url" title="${r.url}">${r.url}</span>
+      <span class="radio-actions">
+        <button class="btn btn-sm" data-id="${r.id}" data-action="play" title="Play">▶</button>
+        <button class="btn btn-danger btn-sm" data-id="${r.id}" data-action="delete" title="Delete">✕</button>
+      </span>
+    `;
+    li.querySelector('[data-action="play"]').addEventListener('click', async () => {
+      try {
+        await api('POST', '/api/bot/radio', { url: r.url, name: r.name });
+        toast(`Playing: ${r.name}`, 'success');
+      } catch (e) { toast(e.message, 'error'); }
+    });
+    li.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+      if (!confirm(`Delete station "${r.name}"?`)) return;
+      try {
+        await api('DELETE', `/api/radios/${r.id}`);
+        allRadios = allRadios.filter(x => x.id !== r.id);
+        renderRadios();
+        populateRadioStationSelect();
+        toast('Station deleted.', 'success');
+      } catch (e) { toast(e.message, 'error'); }
+    });
+    ul.appendChild(li);
+  });
+}
+
+function populateRadioStationSelect() {
+  const sel = $('radio-station-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— saved station —</option>';
+  allRadios.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r.id;
+    opt.textContent = r.name;
+    sel.appendChild(opt);
+  });
+}
+
+// Radio page: add station
+$('radio-add-btn')?.addEventListener('click', async () => {
+  const name = $('radio-new-name').value.trim();
+  const url  = $('radio-new-url').value.trim();
+  if (!name || !url) { toast('Name and URL required.', 'error'); return; }
+  try {
+    const r = await api('POST', '/api/radios', { name, url });
+    allRadios.push(r);
+    renderRadios();
+    populateRadioStationSelect();
+    $('radio-new-name').value = '';
+    $('radio-new-url').value = '';
+    toast(`Station "${name}" added.`, 'success');
+  } catch (e) { toast(e.message, 'error'); }
+});
+
+// Radio page: quick play URL
+$('radio-quick-play-btn')?.addEventListener('click', async () => {
+  const url = $('radio-quick-url').value.trim();
+  if (!url) return;
+  try {
+    await api('POST', '/api/bot/radio', { url });
+    toast('Playing radio stream.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+});
+$('radio-quick-url')?.addEventListener('keydown', e => { if (e.key === 'Enter') $('radio-quick-play-btn').click(); });
+
+// Dashboard: play radio URL
+$('radio-play-btn')?.addEventListener('click', async () => {
+  const url = $('radio-url').value.trim();
+  if (!url) return;
+  try {
+    await api('POST', '/api/bot/radio', { url });
+    toast('Playing radio stream.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+});
+$('radio-url')?.addEventListener('keydown', e => { if (e.key === 'Enter') $('radio-play-btn').click(); });
+
+// Dashboard: play saved radio station
+$('radio-station-play-btn')?.addEventListener('click', async () => {
+  const id = parseInt($('radio-station-select').value);
+  if (!id) { toast('Select a station.', 'error'); return; }
+  const station = allRadios.find(r => r.id === id);
+  if (!station) return;
+  try {
+    await api('POST', '/api/bot/radio', { url: station.url, name: station.name });
+    toast(`Playing: ${station.name}`, 'success');
+  } catch (e) { toast(e.message, 'error'); }
 });

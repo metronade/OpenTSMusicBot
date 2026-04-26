@@ -1,12 +1,13 @@
 'use strict';
 
-const express = require('express');
-const multer  = require('multer');
-const path    = require('path');
-const fs      = require('fs');
+const express      = require('express');
+const multer       = require('multer');
+const path         = require('path');
+const fs           = require('fs');
+const { spawn }    = require('child_process');
 const { v4: uuidv4 } = require('uuid');
-const db      = require('../db/init');
-const config  = require('../config');
+const db           = require('../db/init');
+const config       = require('../config');
 
 const router = express.Router();
 
@@ -39,7 +40,7 @@ router.get('/', (req, res) => {
 
 // ── POST /api/files/upload ────────────────────────────────────────────────────
 router.post('/upload', (req, res) => {
-  upload.single('file')(req, res, err => {
+  upload.single('file')(req, res, async (err) => {
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({ error: `File too large (max ${config.UPLOAD_MAX_MB} MB)` });
     }
@@ -48,6 +49,30 @@ router.post('/upload', (req, res) => {
     }
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
+    }
+
+    // Verify the file actually contains audio streams via ffprobe
+    const hasAudio = await new Promise(resolve => {
+      const proc = spawn('ffprobe', [
+        '-v', 'quiet', '-print_format', 'json',
+        '-show_streams', '-select_streams', 'a',
+        req.file.path,
+      ]);
+      let out = '';
+      proc.stdout.on('data', d => { out += d; });
+      proc.on('close', code => {
+        if (code !== 0) { resolve(false); return; }
+        try {
+          const parsed = JSON.parse(out);
+          resolve(parsed.streams && parsed.streams.length > 0);
+        } catch { resolve(false); }
+      });
+      proc.on('error', () => resolve(false));
+    });
+
+    if (!hasAudio) {
+      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+      return res.status(400).json({ error: 'File contains no audio streams or is corrupted.' });
     }
 
     const record = db.insertFile(

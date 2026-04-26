@@ -6,24 +6,26 @@ const fs           = require('fs');
 const EventEmitter = require('events');
 const config       = require('../config');
 const { getVoice } = require('../voices');
+const log          = require('./logger').createLogger('[Audio]');
 
 class AudioManager extends EventEmitter {
   constructor() {
     super();
-    this._ffmpeg      = null;
-    this._ytdlp       = null;
-    this.volume       = 80;
-    this.track        = null;
-    this._queue       = [];   // { type:'file'|'youtube', path?:'', url?:'', title:'' }
-    this._playing     = false;
-    this._loop        = false;
-    this._duration    = null; // total seconds (float), null if unknown
-    this._elapsed     = 0;    // absolute playback position in seconds
-    this._seekOffset  = 0;    // seek offset applied to current FFmpeg invocation
-    this.history      = [];   // last 10 played tracks
-    this._voice       = 'thorsten';
-    this._piperParams = { noiseScale: 0.667, lengthScale: 1.0, speakerNoise: 0.8 };
-    this._generation  = 0;  // incremented on every play/seek; lets later calls supersede earlier async setups
+    this._ffmpeg        = null;
+    this._ytdlp         = null;
+    this.volume         = 80;
+    this.track          = null;
+    this._queue         = [];   // { type:'file'|'youtube'|'radio', path?:'', url?:'', title:'' }
+    this._playing       = false;
+    this._loop          = false;
+    this._duration      = null; // total seconds (float), null if unknown
+    this._elapsed       = 0;    // absolute playback position in seconds
+    this._seekOffset    = 0;    // seek offset applied to current FFmpeg invocation
+    this.history        = [];   // last 10 played tracks
+    this._voice         = 'thorsten';
+    this._piperParams   = { noiseScale: 0.667, lengthScale: 1.0, speakerNoise: 0.8 };
+    this._generation    = 0;
+    this._watchdogTimer = null;
   }
 
   // ── Getters ────────────────────────────────────────────────────────────────
@@ -65,7 +67,6 @@ class AudioManager extends EventEmitter {
   addToQueue(item) {
     this._queue.push(item);
     this.emit('queue', this.getQueue());
-    // Auto-start if nothing is playing
     if (!this._ffmpeg && !this._ytdlp) {
       this._playing = true;
       this._playNext();
@@ -74,6 +75,15 @@ class AudioManager extends EventEmitter {
 
   removeFromQueue(index) {
     this._queue.splice(index, 1);
+    this.emit('queue', this.getQueue());
+  }
+
+  reorderQueue(from, to) {
+    if (from < 0 || from >= this._queue.length || to < 0 || to >= this._queue.length) {
+      throw new Error('Invalid queue indices');
+    }
+    const [item] = this._queue.splice(from, 1);
+    this._queue.splice(to, 0, item);
     this.emit('queue', this.getQueue());
   }
 
@@ -88,9 +98,6 @@ class AudioManager extends EventEmitter {
     this._elapsed    = seekTo;
     this._seekOffset = seekTo;
 
-    // apad=pad_dur=2.5: module-virtual-source has a ~2000ms internal buffer.
-    // Without padding, short files are swallowed by the buffer. The 2.5s of
-    // silence tail ensures all real audio passes through before FFmpeg exits.
     const audioFilter  = `volume=${this.volume / 100},apad=pad_dur=2.5`;
 
     const args = [
@@ -127,8 +134,8 @@ class AudioManager extends EventEmitter {
       const ytdlpArgs = [
         '--no-playlist',
         '-f', 'bestaudio/best',
-        '--print', 'duration',  // first stdout line: duration in seconds (or "NA")
-        '--print', 'url',       // second stdout line: direct stream URL
+        '--print', 'duration',
+        '--print', 'url',
         '--no-warnings',
         '--no-cache-dir',
         '--js-runtimes', 'node:/usr/local/bin/node',
@@ -143,7 +150,7 @@ class AudioManager extends EventEmitter {
       this._ytdlp.stdout.on('data', d => { rawOut += d.toString(); });
       this._ytdlp.stderr.on('data', d => {
         const msg = d.toString().trim();
-        if (msg) console.error('[yt-dlp]', msg);
+        if (msg) log.error(msg);
         errorOutput += msg + '\n';
       });
 
@@ -160,10 +167,10 @@ class AudioManager extends EventEmitter {
         const streamUrl = lines.slice(1).join('\n').trim();
 
         if ((code !== 0 && signal !== null) || (!streamUrl && code !== 0)) {
-          return reject(new Error(`yt-dlp error (code ${code ?? signal}): ${errorOutput.trim()}`));
+          return reject(new Error(this._parseYtdlpError(errorOutput, code)));
         }
         if (!streamUrl) {
-          return reject(new Error(`yt-dlp returned no URL (code ${code}): ${errorOutput.trim()}`));
+          return reject(new Error(this._parseYtdlpError(errorOutput, code)));
         }
 
         this._duration = (durStr && durStr !== 'NA') ? parseFloat(durStr) || null : null;
@@ -188,9 +195,37 @@ class AudioManager extends EventEmitter {
     });
   }
 
+  playRadio(url, title = null) {
+    const gen = ++this._generation;
+    this._stopCurrent();
+    this.setLoop(false);
+    this._playing    = true;
+    this._duration   = null;
+    this._elapsed    = 0;
+    this._seekOffset = 0;
+    if (this._generation !== gen) return Promise.resolve({ superseded: true });
+
+    const args = [
+      '-i', url,
+      '-vn',
+      '-ac', '2',
+      '-ar', '48000',
+      '-af', `volume=${this.volume / 100}`,
+      '-f', 'pulse',
+      config.PULSE_SINK,
+    ];
+
+    return new Promise((resolve, reject) => {
+      this._startFFmpeg(
+        args,
+        { title: title || url, type: 'radio', url },
+        resolve, reject,
+      );
+    });
+  }
+
   async playPlaylist(fileObjects) {
     this.stop();
-    // Accept either plain path strings or {path, title} objects
     this._queue = fileObjects.map(o =>
       typeof o === 'string'
         ? { type: 'file', path: o, title: path.basename(o) }
@@ -226,7 +261,6 @@ class AudioManager extends EventEmitter {
     await new Promise((resolve, reject) => {
       const piper = spawn(config.PIPER_BINARY, piperArgs, { env: { ...process.env, LD_LIBRARY_PATH: '/usr/local/piper' } });
 
-      // Piper reads line-by-line — trailing \n is required to flush the last sentence
       piper.stdin.write(text.replace(/\r?\n/g, ' ') + '\n');
       piper.stdin.end();
       piper.stdout.on('data', () => {});
@@ -238,7 +272,6 @@ class AudioManager extends EventEmitter {
       });
     });
 
-    // Stop anything currently playing
     this._stopCurrent();
     this._duration = null;
     this._elapsed  = 0;
@@ -261,7 +294,7 @@ class AudioManager extends EventEmitter {
         args,
         { title: `TTS: ${text.slice(0, 60)}`, type: 'file', path: tmpFile },
         resolve, reject,
-        true, // skipHistory
+        true,
       );
       this.once('stopped', () => fs.unlink(tmpFile, () => {}));
     });
@@ -272,12 +305,13 @@ class AudioManager extends EventEmitter {
   async seek(seconds) {
     const track = this.track;
     if (!track || !this._playing) return;
+    if (track.type === 'radio') return;
     ++this._generation;
 
     const sec = Math.max(0, this._duration ? Math.min(seconds, this._duration) : seconds);
 
     const savedDuration = this._duration;
-    this._stopCurrent();            // emits 'stopped', sets track=null
+    this._stopCurrent();
     this._duration   = savedDuration;
     this._elapsed    = sec;
     this._seekOffset = sec;
@@ -312,7 +346,7 @@ class AudioManager extends EventEmitter {
     });
   }
 
-  // ── Stop ───────────────────────────────────────────────────────────────────
+  // ── Stop / Skip ────────────────────────────────────────────────────────────
 
   stop() {
     this._playing    = false;
@@ -326,7 +360,13 @@ class AudioManager extends EventEmitter {
     this._stopCurrent();
   }
 
+  skip() {
+    if (!this._ffmpeg && !this._ytdlp) return;
+    this._stopCurrent();
+  }
+
   _stopCurrent() {
+    this._clearWatchdog();
     if (this._ytdlp) {
       this._ytdlp.kill('SIGKILL');
       this._ytdlp = null;
@@ -351,7 +391,7 @@ class AudioManager extends EventEmitter {
       'set-sink-volume', config.PULSE_SINK,
       `${this.volume}%`,
     ]);
-    pactl.on('error', err => console.error('[Audio] pactl error:', err.message));
+    pactl.on('error', err => log.error('pactl error:', err.message));
 
     this.emit('volume', this.volume);
     return this.volume;
@@ -370,11 +410,13 @@ class AudioManager extends EventEmitter {
     try {
       if (next.type === 'youtube') {
         await this.playYoutube(next.url);
+      } else if (next.type === 'radio') {
+        await this.playRadio(next.url, next.title);
       } else {
         await this.playFile(next.path, next.title);
       }
     } catch (err) {
-      console.error('[Audio] Queue track error:', err.message);
+      log.error('Queue track error:', err.message);
       this.emit('error', err);
       await this._playNext();
     }
@@ -403,8 +445,18 @@ class AudioManager extends EventEmitter {
     this.emit('playing', { ...trackInfo, duration: this._duration });
     resolve(trackInfo);
 
-    // Parse structured progress from stdout (out_time_us=microseconds)
     let _progBuf = '';
+    let _stderrBuf = '';
+    const _resetWatchdog = () => {
+      this._clearWatchdog();
+      this._watchdogTimer = setTimeout(() => {
+        log.warn('Watchdog: no progress for 30s, killing FFmpeg');
+        this.emit('error', new Error('Playback stalled (no progress for 30s)'));
+        if (this._ffmpeg) this._ffmpeg.kill('SIGKILL');
+      }, 30_000);
+    };
+    _resetWatchdog();
+
     this._ffmpeg.stdout.on('data', d => {
       _progBuf += d.toString();
       const lines = _progBuf.split('\n');
@@ -412,11 +464,9 @@ class AudioManager extends EventEmitter {
       for (const line of lines) {
         const m = line.match(/^out_time_us=(\d+)$/);
         if (!m) continue;
+        _resetWatchdog();
         const segSecs = parseInt(m[1]) / 1_000_000;
         const rawElapsed = segSecs + this._seekOffset;
-        // module-virtual-source buffers ~2s before audio reaches TS3, so FFmpeg's
-        // progress is 2s ahead of what the listener actually hears. Subtract the
-        // delay and clamp to [0, duration] for an accurate timeline.
         const bufferDelaySec = 2.0;
         const adjusted = rawElapsed - bufferDelaySec;
         this._elapsed = this._duration
@@ -428,18 +478,24 @@ class AudioManager extends EventEmitter {
 
     this._ffmpeg.stderr.on('data', d => {
       const msg = d.toString().trim();
-      if (msg) console.error('[FFmpeg]', msg);
+      if (msg) {
+        log.error(msg);
+        _stderrBuf += msg + '\n';
+        if (_stderrBuf.length > 4000) _stderrBuf = _stderrBuf.slice(-2000);
+      }
     });
 
     this._ffmpeg.on('error', err => {
-      console.error('[FFmpeg] spawn error:', err.message);
+      log.error('spawn error:', err.message);
+      this._clearWatchdog();
       this._ffmpeg = null;
       this.track   = null;
       this.emit('error', err);
     });
 
     this._ffmpeg.on('close', (code, signal) => {
-      console.log(`[FFmpeg] process exited code=${code ?? 'none'} signal=${signal ?? 'none'} track=${this.track?.title ?? 'none'}`);
+      log.info(`process exited code=${code ?? 'none'} signal=${signal ?? 'none'} track=${trackInfo?.title ?? 'none'}`);
+      this._clearWatchdog();
       const wasTrack   = this.track;
       this._ffmpeg     = null;
       this._ytdlp      = null;
@@ -447,6 +503,11 @@ class AudioManager extends EventEmitter {
       this._elapsed    = 0;
       this._seekOffset = 0;
       this._duration   = null;
+
+      if (code !== 0 && code !== null && wasTrack) {
+        const lastErr = _stderrBuf.trim().split('\n').slice(-3).join('; ');
+        this.emit('error', new Error(`FFmpeg exited (${code ?? signal}): ${lastErr || 'unknown error'}`));
+      }
 
       if (wasTrack) this.emit('stopped');
 
@@ -458,6 +519,26 @@ class AudioManager extends EventEmitter {
         }
       }
     });
+  }
+
+  _clearWatchdog() {
+    if (this._watchdogTimer) {
+      clearTimeout(this._watchdogTimer);
+      this._watchdogTimer = null;
+    }
+  }
+
+  _parseYtdlpError(output, code) {
+    const lower = (output || '').toLowerCase();
+    if (lower.includes('sign in to confirm') || lower.includes('bot'))
+      return 'YouTube requires authentication. Upload cookies via Settings.';
+    if (lower.includes('video unavailable') || lower.includes('private'))
+      return 'Video is unavailable or private.';
+    if (lower.includes('age') || lower.includes('inappropriate'))
+      return 'Video is age-restricted and cannot be accessed.';
+    if (lower.includes('geo') || lower.includes('country'))
+      return 'Video is geo-blocked in the server\'s region.';
+    return `yt-dlp error (code ${code ?? 'unknown'}): ${(output || '').trim().slice(-200)}`;
   }
 
   async _probeDuration(src) {

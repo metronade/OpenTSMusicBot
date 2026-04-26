@@ -4,6 +4,7 @@ const express  = require('express');
 const ts3query = require('../services/ts3query');
 const audio    = require('../services/audio');
 const { VOICES, getVoice, getAllVoiceIds, voicesByLanguage } = require('../voices');
+const log      = require('../services/logger').createLogger('[BotAPI]');
 
 const router = express.Router();
 
@@ -98,6 +99,24 @@ router.post('/stop', (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/bot/skip
+router.post('/skip', (req, res) => {
+  audio.skip();
+  res.json({ ok: true });
+});
+
+// POST /api/bot/radio  { url: string, name?: string }
+router.post('/radio', async (req, res) => {
+  const { url, name } = req.body;
+  if (!url) return res.status(400).json({ error: 'URL required' });
+  try {
+    const r = await audio.playRadio(url, name || null);
+    res.json({ ok: true, superseded: !!r?.superseded, track: audio.getCurrentTrack() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/bot/play  { name: string }
 router.post('/play', async (req, res) => {
   const { name } = req.body;
@@ -106,7 +125,7 @@ router.post('/play', async (req, res) => {
   const db     = require('../db/init');
   const record = db.findFileRecordByName(name);
   if (!record) {
-    console.warn('[play] not found:', JSON.stringify(name));
+    log.warn('not found:', JSON.stringify(name));
     return res.status(404).json({ error: `File not found: ${name}` });
   }
 
@@ -174,9 +193,9 @@ router.get('/queue', (req, res) => {
   res.json(audio.getQueue());
 });
 
-// POST /api/bot/queue  { type:'file', id:number } | { type:'youtube', url:string }
+// POST /api/bot/queue  { type:'file'|'youtube'|'radio', id?:number, url?:string, name?:string }
 router.post('/queue', async (req, res) => {
-  const { type, id, url } = req.body;
+  const { type, id, url, name } = req.body;
   const path = require('path');
 
   if (type === 'file') {
@@ -192,7 +211,25 @@ router.post('/queue', async (req, res) => {
     audio.addToQueue({ type: 'youtube', url, title: url });
     return res.json({ ok: true });
   }
-  res.status(400).json({ error: 'type must be file or youtube' });
+  if (type === 'radio') {
+    if (!url) return res.status(400).json({ error: 'URL required' });
+    audio.addToQueue({ type: 'radio', url, title: name || url });
+    return res.json({ ok: true });
+  }
+  res.status(400).json({ error: 'type must be file, youtube, or radio' });
+});
+
+// PUT /api/bot/queue/reorder  { from: number, to: number }
+router.put('/queue/reorder', (req, res) => {
+  const { from, to } = req.body;
+  if (typeof from !== 'number' || typeof to !== 'number')
+    return res.status(400).json({ error: 'from and to indices required' });
+  try {
+    audio.reorderQueue(from, to);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // DELETE /api/bot/queue/:index
@@ -223,8 +260,8 @@ router.post('/seek', async (req, res) => {
 // POST /api/bot/loop  { loop?: boolean }  — omit to toggle
 router.post('/loop', (req, res) => {
   const track = audio.getCurrentTrack();
-  if (track && track.type === 'youtube')
-    return res.status(400).json({ error: 'Loop not available for YouTube streams' });
+  if (track && (track.type === 'youtube' || track.type === 'radio'))
+    return res.status(400).json({ error: 'Loop not available for streams' });
   const val = typeof req.body.loop === 'boolean' ? req.body.loop : !audio.getLoop();
   res.json({ loop: audio.setLoop(val) });
 });

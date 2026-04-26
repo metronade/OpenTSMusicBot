@@ -69,4 +69,14 @@ router.post('/change-password', (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/auth/invalidate-sessions  — admin: logout all other sessions
+router.post('/invalidate-sessions', (req, res) => {
+  if (!req.session?.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const user = db.getUserById(req.session.userId);
+  if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+  const sid = req.sessionID;
+  db.db.prepare("DELETE FROM sessions WHERE sid != ?").run(sid);
+  res.json({ ok: true });
+});
+
 module.exports = router;
