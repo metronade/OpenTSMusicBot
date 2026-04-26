@@ -63,11 +63,17 @@
 
     <!-- ── DASHBOARD ──────────────────────────────────────────────────────── -->
     <section id="page-dashboard" class="page active">
-      <h2>Dashboard</h2>
+      <div class="dashboard-header">
+        <h2>Dashboard</h2>
+        <div class="dashboard-toggle-wrap">
+          <button id="dashboard-toggle-btn" class="btn btn-secondary btn-sm" title="Customize dashboard">⚙</button>
+          <div id="dashboard-toggle-dropdown" class="hidden"></div>
+        </div>
+      </div>
 
       <div class="card-grid">
         <!-- Status -->
-        <div class="card">
+        <div class="card" data-card="status">
           <div class="card-title">Bot Status</div>
           <div id="bot-status-badge" class="badge badge-offline">Offline</div>
           <div class="controls-row" style="margin-top:.75rem">
@@ -78,7 +84,7 @@
         </div>
 
         <!-- Now Playing -->
-        <div class="card span-2">
+        <div class="card span-2" data-card="now-playing">
           <div class="card-title">Now Playing</div>
           <div id="now-playing-title" class="now-playing-title">— idle —</div>
           <div id="now-playing-type"  class="now-playing-type"></div>
@@ -98,7 +104,7 @@
         </div>
 
         <!-- Volume -->
-        <div class="card">
+        <div class="card" data-card="volume">
           <div class="card-title">Volume</div>
           <div class="vol-row">
             <input  id="vol-slider" type="range" min="0" max="100" value="80" />
@@ -107,7 +113,7 @@
         </div>
 
         <!-- Quick Play -->
-        <div class="card">
+        <div class="card" data-card="quick-play">
           <div class="card-title">Quick Play (file)</div>
           <div class="input-row autocomplete-wrap">
             <div class="autocomplete-container">
@@ -120,7 +126,7 @@
         </div>
 
         <!-- YouTube Play -->
-        <div class="card">
+        <div class="card" data-card="youtube">
           <div class="card-title">YouTube Stream</div>
           <div class="input-row">
             <input  id="yt-url"  type="text" placeholder="YouTube URL" />
@@ -130,7 +136,7 @@
         </div>
 
         <!-- Radio Stream -->
-        <div class="card">
+        <div class="card" data-card="radio">
           <div class="card-title">Radio Stream</div>
           <div class="input-row">
             <input id="radio-url" type="text" placeholder="Stream URL" />
@@ -146,7 +152,7 @@
         </div>
 
         <!-- Channel Move -->
-        <div class="card">
+        <div class="card" data-card="channel">
           <div class="card-title">Channel</div>
           <div class="input-row">
             <select id="channel-select">
@@ -157,7 +163,7 @@
         </div>
 
         <!-- Nickname -->
-        <div class="card">
+        <div class="card" data-card="nickname">
           <div class="card-title">Nickname</div>
           <div class="input-row">
             <input  id="nickname-input" type="text" placeholder="New nickname" maxlength="30" />
@@ -166,7 +172,7 @@
         </div>
 
         <!-- Text to Speech -->
-        <div class="card">
+        <div class="card" data-card="tts">
           <div class="card-title">Text to Speech</div>
           <p class="subtitle" style="margin-bottom:.5rem">Quick TTS with default voice and settings.</p>
           <div class="input-row">
@@ -177,7 +183,7 @@
         </div>
 
         <!-- Queue -->
-        <div class="card span-2" id="queue-card">
+        <div class="card span-2" id="queue-card" data-card="queue">
           <div class="card-title">Queue <span id="queue-count" class="text-muted"></span></div>
           <ul id="queue-list" class="queue-list">
             <li class="empty-msg" id="queue-empty">Queue is empty.</li>
@@ -185,7 +191,7 @@
         </div>
 
         <!-- History -->
-        <div class="card" id="history-card">
+        <div class="card" id="history-card" data-card="history">
           <div class="card-title">Recent Plays</div>
           <ul id="history-list" class="history-list">
             <li class="empty-msg">No history yet.</li>

@@ -456,3 +456,45 @@ code   { background: rgba(255,255,255,.08); padding: .1em .35em; border-radius: 
 .radio-url  { flex: 2; font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .radio-actions button { opacity: 0; transition: opacity .15s; }
 .radio-item:hover .radio-actions button { opacity: 1; }
+
+/* ── Dashboard customization ───────────────────────────────────────────────── */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.dashboard-header h2 { margin-bottom: 0; }
+.dashboard-toggle-wrap { position: relative; }
+.dashboard-toggle-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .6rem .75rem;
+  min-width: 210px;
+  z-index: 100;
+  box-shadow: 0 6px 16px rgba(0,0,0,.5);
+}
+.dashboard-toggle-dropdown .toggle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .35rem 0;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.dashboard-toggle-dropdown .toggle-item + .toggle-item {
+  border-top: 1px solid var(--border);
+  padding-top: .45rem;
+  margin-top: .1rem;
+}
+.dashboard-toggle-dropdown .toggle-item input[type=checkbox] {
+  width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer;
+}
+.card-grid .card[data-card] { cursor: grab; }
+.card-grid .card[data-card].dragging { opacity: .4; }
+.card-grid .card[data-card].drag-over { border-top: 3px solid var(--accent); }

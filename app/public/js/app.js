@@ -1258,3 +1258,153 @@ $('radio-station-play-btn')?.addEventListener('click', async () => {
     toast(`Playing: ${station.name}`, 'success');
   } catch (e) { toast(e.message, 'error'); }
 });
+
+// ── Dashboard Customization ────────────────────────────────────────────────────
+const DASHBOARD_CARDS = [
+  { id: 'status',      label: 'Bot Status' },
+  { id: 'now-playing', label: 'Now Playing' },
+  { id: 'volume',      label: 'Volume' },
+  { id: 'quick-play',  label: 'Quick Play' },
+  { id: 'youtube',     label: 'YouTube Stream' },
+  { id: 'radio',       label: 'Radio Stream' },
+  { id: 'channel',     label: 'Channel' },
+  { id: 'nickname',    label: 'Nickname' },
+  { id: 'tts',         label: 'Text to Speech' },
+  { id: 'queue',       label: 'Queue' },
+  { id: 'history',     label: 'Recent Plays' },
+];
+
+function getCardGrid() {
+  return document.querySelector('#page-dashboard .card-grid');
+}
+
+function getCardByDataId(id) {
+  return document.querySelector(`#page-dashboard .card-grid .card[data-card="${id}"]`);
+}
+
+function loadDashboardPrefs() {
+  const grid = getCardGrid();
+  if (!grid) return;
+
+  // Restore order
+  try {
+    const order = JSON.parse(localStorage.getItem('dashboardOrder'));
+    if (Array.isArray(order)) {
+      order.forEach(id => {
+        const card = getCardByDataId(id);
+        if (card) grid.appendChild(card);
+      });
+    }
+  } catch { /* ignore */ }
+
+  // Restore hidden
+  try {
+    const hidden = JSON.parse(localStorage.getItem('dashboardHidden'));
+    if (Array.isArray(hidden)) {
+      hidden.forEach(id => {
+        const card = getCardByDataId(id);
+        if (card) card.classList.add('hidden');
+      });
+    }
+  } catch { /* ignore */ }
+}
+
+function saveDashboardOrder() {
+  const grid = getCardGrid();
+  if (!grid) return;
+  const order = [...grid.querySelectorAll('.card[data-card]')].map(c => c.dataset.card);
+  localStorage.setItem('dashboardOrder', JSON.stringify(order));
+}
+
+function saveDashboardHidden() {
+  const grid = getCardGrid();
+  if (!grid) return;
+  const hidden = [...grid.querySelectorAll('.card[data-card].hidden')].map(c => c.dataset.card);
+  localStorage.setItem('dashboardHidden', JSON.stringify(hidden));
+}
+
+function initDashboardDragDrop() {
+  const grid = getCardGrid();
+  if (!grid) return;
+
+  grid.querySelectorAll('.card[data-card]').forEach(card => {
+    card.draggable = true;
+
+    card.addEventListener('dragstart', e => {
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.dataset.card);
+    });
+
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      grid.querySelectorAll('.card.drag-over').forEach(c => c.classList.remove('drag-over'));
+    });
+
+    card.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (card.classList.contains('dragging')) return;
+      grid.querySelectorAll('.card.drag-over').forEach(c => c.classList.remove('drag-over'));
+      card.classList.add('drag-over');
+    });
+
+    card.addEventListener('dragleave', () => {
+      card.classList.remove('drag-over');
+    });
+
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      const fromId = e.dataTransfer.getData('text/plain');
+      const fromCard = getCardByDataId(fromId);
+      if (!fromCard || fromCard === card) return;
+      grid.insertBefore(fromCard, card);
+      saveDashboardOrder();
+    });
+  });
+}
+
+function initDashboardToggle() {
+  const btn = $('dashboard-toggle-btn');
+  const dropdown = $('dashboard-toggle-dropdown');
+  if (!btn || !dropdown) return;
+
+  dropdown.innerHTML = DASHBOARD_CARDS.map(c =>
+    `<label class="toggle-item">
+       <span>${c.label}</span>
+       <input type="checkbox" data-toggle-card="${c.id}" checked />
+     </label>`
+  ).join('');
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    dropdown.classList.toggle('hidden');
+    if (!dropdown.classList.contains('hidden')) {
+      DASHBOARD_CARDS.forEach(c => {
+        const card = getCardByDataId(c.id);
+        const cb = dropdown.querySelector(`input[data-toggle-card="${c.id}"]`);
+        if (cb) cb.checked = card && !card.classList.contains('hidden');
+      });
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!dropdown.contains(e.target) && e.target !== btn) {
+      dropdown.classList.add('hidden');
+    }
+  });
+
+  dropdown.addEventListener('change', e => {
+    const cb = e.target;
+    if (!cb.dataset.toggleCard) return;
+    const card = getCardByDataId(cb.dataset.toggleCard);
+    if (!card) return;
+    card.classList.toggle('hidden', !cb.checked);
+    saveDashboardHidden();
+  });
+}
+
+loadDashboardPrefs();
+initDashboardDragDrop();
+initDashboardToggle();
