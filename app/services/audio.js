@@ -497,9 +497,11 @@ class AudioManager extends EventEmitter {
     this._ffmpeg.on('error', err => {
       log.error('spawn error:', err.message);
       this._clearWatchdog();
-      this._ffmpeg = null;
-      this.track   = null;
+      this._ffmpeg  = null;
+      this.track    = null;
+      this._playing = false;
       this.emit('error', err);
+      this.emit('stopped');
     });
 
     this._ffmpeg.on('close', (code, signal) => {
@@ -523,8 +525,11 @@ class AudioManager extends EventEmitter {
       if (this._playing) {
         if (this._loop && wasTrack && wasTrack.type === 'file' && wasTrack.path) {
           this.playFile(wasTrack.path, wasTrack.title).catch(err => this.emit('error', err));
-        } else {
+        } else if (this._queue.length) {
           this._playNext().catch(err => this.emit('error', err));
+        } else {
+          this._playing = false;
+          this.emit('queue', []);
         }
       }
     });
