@@ -207,6 +207,9 @@ class AudioManager extends EventEmitter {
 
     const args = [
       '-re',
+      '-reconnect', '1',
+      '-reconnect_streamed', '1',
+      '-reconnect_delay_max', '10',
       '-i', url,
       '-vn',
       '-ac', '2',
@@ -359,6 +362,11 @@ class AudioManager extends EventEmitter {
     this.emit('loop',  false);
     this.emit('queue', []);
     this._stopCurrent();
+    // Flush PulseAudio sink to discard any buffered audio
+    try {
+      spawnSync('pactl', ['--server', config.PULSE_SERVER, 'suspend-sink', config.PULSE_SINK, '1'], { timeout: 2000 });
+      spawnSync('pactl', ['--server', config.PULSE_SERVER, 'suspend-sink', config.PULSE_SINK, '0'], { timeout: 2000 });
+    } catch { /* ignore */ }
   }
 
   skip() {
@@ -380,11 +388,6 @@ class AudioManager extends EventEmitter {
       this.track = null;
       this.emit('stopped');
     }
-    // Flush PulseAudio sink to discard any buffered audio
-    try {
-      spawnSync('pactl', ['--server', config.PULSE_SERVER, 'suspend-sink', config.PULSE_SINK, '1'], { timeout: 2000 });
-      spawnSync('pactl', ['--server', config.PULSE_SERVER, 'suspend-sink', config.PULSE_SINK, '0'], { timeout: 2000 });
-    } catch { /* ignore */ }
   }
 
   // ── Volume ─────────────────────────────────────────────────────────────────

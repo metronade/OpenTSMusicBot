@@ -1405,8 +1405,9 @@ function initDashboardDragDrop() {
     if (card.classList.contains('span-2')) _dashPlaceholder.classList.add('span-2');
     card.parentNode.insertBefore(_dashPlaceholder, card);
 
-    // Hide original card visually (keep in DOM for data)
-    card.style.display = 'none';
+    // Keep card in DOM but invisible (display:none kills HTML5 drag)
+    card.style.position = 'absolute';
+    card.style.left = '-9999px';
   });
 
   grid.addEventListener('dragover', e => {
@@ -1419,7 +1420,8 @@ function initDashboardDragDrop() {
   grid.addEventListener('dragend', () => {
     if (!_dashDragCard) return;
     _dashDragCard.classList.remove('dragging');
-    _dashDragCard.style.display = '';
+    _dashDragCard.style.position = '';
+    _dashDragCard.style.left = '';
 
     // Insert card where placeholder is
     if (_dashPlaceholder && _dashPlaceholder.parentNode) {
