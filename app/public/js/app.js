@@ -1375,11 +1375,6 @@ function initDashboardEditMode() {
     btn.classList.toggle('editing', _dashEditMode);
     btn.textContent = _dashEditMode ? '✎ Done' : '✎ Edit';
 
-    // Enable/disable draggable
-    grid.querySelectorAll('.card[data-card]').forEach(card => {
-      card.draggable = _dashEditMode;
-    });
-
     // Exit edit mode also closes the toggle dropdown
     if (!_dashEditMode) {
       $('dashboard-toggle-dropdown')?.classList.add('hidden');
@@ -1391,37 +1386,61 @@ function initDashboardDragDrop() {
   const grid = getCardGrid();
   if (!grid) return;
 
-  grid.addEventListener('dragstart', e => {
-    if (!_dashEditMode) { e.preventDefault(); return; }
+  let pointerOffsetX = 0;
+  let pointerOffsetY = 0;
+
+  grid.addEventListener('pointerdown', e => {
+    if (!_dashEditMode) return;
     const card = e.target.closest('.card[data-card]');
     if (!card) return;
-    _dashDragCard = card;
-    card.classList.add('dragging');
+    // Ignore if clicking on interactive elements
+    if (e.target.closest('button, input, select, textarea, a')) return;
 
-    // Create placeholder with same dimensions
+    e.preventDefault();
+    _dashDragCard = card;
+
+    const rect = card.getBoundingClientRect();
+    pointerOffsetX = e.clientX - rect.left;
+    pointerOffsetY = e.clientY - rect.top;
+
+    // Create placeholder where the card was
     _dashPlaceholder = document.createElement('div');
     _dashPlaceholder.className = 'dash-placeholder';
-    _dashPlaceholder.style.height = card.offsetHeight + 'px';
+    _dashPlaceholder.style.height = rect.height + 'px';
     if (card.classList.contains('span-2')) _dashPlaceholder.classList.add('span-2');
     card.parentNode.insertBefore(_dashPlaceholder, card);
 
-    // Keep card in DOM but invisible (display:none kills HTML5 drag)
-    card.style.position = 'absolute';
-    card.style.left = '-9999px';
+    // Move card to fixed position following mouse
+    card.classList.add('dragging');
+    card.style.position = 'fixed';
+    card.style.width = rect.width + 'px';
+    card.style.left = (e.clientX - pointerOffsetX) + 'px';
+    card.style.top = (e.clientY - pointerOffsetY) + 'px';
+    card.style.zIndex = '500';
+    card.style.pointerEvents = 'none';
+    card.setPointerCapture(e.pointerId);
   });
 
-  grid.addEventListener('dragover', e => {
-    if (!_dashEditMode || !_dashDragCard) return;
+  grid.addEventListener('pointermove', e => {
+    if (!_dashDragCard) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    // Move card with pointer
+    _dashDragCard.style.left = (e.clientX - pointerOffsetX) + 'px';
+    _dashDragCard.style.top = (e.clientY - pointerOffsetY) + 'px';
     movePlaceholder(e.clientX, e.clientY);
   });
 
-  grid.addEventListener('dragend', () => {
+  grid.addEventListener('pointerup', e => {
     if (!_dashDragCard) return;
+    e.preventDefault();
+
     _dashDragCard.classList.remove('dragging');
     _dashDragCard.style.position = '';
+    _dashDragCard.style.width = '';
     _dashDragCard.style.left = '';
+    _dashDragCard.style.top = '';
+    _dashDragCard.style.zIndex = '';
+    _dashDragCard.style.pointerEvents = '';
 
     // Insert card where placeholder is
     if (_dashPlaceholder && _dashPlaceholder.parentNode) {

@@ -506,18 +506,18 @@ code   { background: rgba(255,255,255,.08); padding: .1em .35em; border-radius: 
   cursor: grab;
   outline: 2px dashed var(--border);
   outline-offset: -2px;
-  transition: outline-color .15s, transform .15s, opacity .15s;
+  transition: outline-color .15s;
 }
 .card-grid.edit-mode .card[data-card]:hover {
   outline-color: var(--accent);
 }
 .card-grid.edit-mode .card[data-card].dragging {
-  opacity: .35;
-  transform: scale(.97);
+  opacity: .85;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  transform: rotate(1deg);
 }
 .card-grid .dash-placeholder {
   border: 2px dashed var(--accent);
   border-radius: var(--radius);
   background: rgba(88,101,242,.06);
-  transition: height .15s;
 }
