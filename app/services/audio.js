@@ -209,7 +209,8 @@ class AudioManager extends EventEmitter {
       '-re',
       '-reconnect', '1',
       '-reconnect_streamed', '1',
-      '-reconnect_delay_max', '10',
+      '-reconnect_delay_max', '5',
+      '-timeout', '10000000',
       '-i', url,
       '-vn',
       '-ac', '2',
@@ -353,6 +354,7 @@ class AudioManager extends EventEmitter {
   // ── Stop / Skip ────────────────────────────────────────────────────────────
 
   stop() {
+    this._stopCurrent();
     this._playing    = false;
     this._loop       = false;
     this._duration   = null;
@@ -361,7 +363,6 @@ class AudioManager extends EventEmitter {
     this._queue      = [];
     this.emit('loop',  false);
     this.emit('queue', []);
-    this._stopCurrent();
     // Flush PulseAudio sink to discard any buffered audio
     try {
       spawnSync('pactl', ['--server', config.PULSE_SERVER, 'suspend-sink', config.PULSE_SINK, '1'], { timeout: 2000 });
@@ -432,6 +433,7 @@ class AudioManager extends EventEmitter {
   }
 
   _startFFmpeg(args, trackInfo, resolve, reject, skipHistory = false) {
+    const gen = this._generation;
     const env = { ...process.env, PULSE_SERVER: config.PULSE_SERVER };
 
     this._ffmpeg = spawn('ffmpeg', [
@@ -495,6 +497,7 @@ class AudioManager extends EventEmitter {
     });
 
     this._ffmpeg.on('error', err => {
+      if (this._generation !== gen) return;
       log.error('spawn error:', err.message);
       this._clearWatchdog();
       this._ffmpeg  = null;
@@ -506,6 +509,8 @@ class AudioManager extends EventEmitter {
 
     this._ffmpeg.on('close', (code, signal) => {
       log.info(`process exited code=${code ?? 'none'} signal=${signal ?? 'none'} track=${trackInfo?.title ?? 'none'}`);
+      // If a new playback started after this FFmpeg, don't corrupt its state
+      if (this._generation !== gen) return;
       this._clearWatchdog();
       const wasTrack   = this.track;
       this._ffmpeg     = null;

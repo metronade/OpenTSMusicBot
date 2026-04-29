@@ -261,7 +261,6 @@ function setNowPlaying(track) {
     loopLabel.classList.remove('hidden');
   } else {
     loopLabel.classList.add('hidden');
-    $('loop-checkbox').checked = false;
   }
   // Show progress bar and init slider when track has known duration
   if (track && track.duration) {
