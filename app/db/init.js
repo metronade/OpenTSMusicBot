@@ -173,6 +173,11 @@ if (!settingStmts.get.get(ttsEventsKey)) {
   settingStmts.set.run(ttsEventsKey, JSON.stringify(TTS_EVENTS_DEFAULTS));
 }
 
+const dnKey = 'dynamic_nickname';
+if (!settingStmts.get.get(dnKey)) {
+  settingStmts.set.run(dnKey, JSON.stringify({ enabled: false, base: config.TS3_NICKNAME }));
+}
+
 function getSetting(key, fallback = null) {
   const row = settingStmts.get.get(key);
   return row ? JSON.parse(row.value) : fallback;

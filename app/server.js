@@ -217,8 +217,7 @@ app.get('/api/settings/dynamic-nickname', requireAdmin, (req, res) => {
 });
 
 app.post('/api/settings/dynamic-nickname', requireAdmin, (req, res) => {
-  const current = db.getSetting('dynamic_nickname');
-  if ('enabled' in req.body) current.enabled = !!req.body.enabled;
+  const current = db.getSetting('dynamic_nickname') || { enabled: false, base: config.TS3_NICKNAME };  if ('enabled' in req.body) current.enabled = !!req.body.enabled;
   if (typeof req.body.base === 'string') current.base = req.body.base.trim().slice(0, 30) || config.TS3_NICKNAME;
   db.setSetting('dynamic_nickname', current);
   // Apply immediately: revert to base or update if radio is playing
