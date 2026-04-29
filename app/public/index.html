@@ -385,6 +385,21 @@
       </div>
 
       <div class="card">
+        <div class="card-title">Dynamic Nickname</div>
+        <p class="subtitle">Show the current radio station in the bot's TS3 nickname.</p>
+        <label class="toggle-row" style="margin-bottom:.5rem">
+          <span>Enable dynamic nickname</span>
+          <input type="checkbox" id="dyn-nick-enabled" />
+        </label>
+        <div class="input-row">
+          <input id="dyn-nick-base" type="text" placeholder="Base nickname" maxlength="30" />
+          <button id="dyn-nick-save" class="btn">Save</button>
+        </div>
+        <p class="subtitle" style="margin-top:.4rem">Nickname becomes: <code>Base [Radio: Station]</code> when radio plays.</p>
+        <span id="dyn-nick-msg" class="hidden" style="color:var(--success);font-size:13px;margin-left:.5rem">Saved.</span>
+      </div>
+
+      <div class="card">
         <div class="card-title">Bot Identity</div>
         <p class="subtitle">Upload an existing <code>identity.ini</code> exported from the TS3 client.<br>
            The TS3 container must be restarted after upload.</p>

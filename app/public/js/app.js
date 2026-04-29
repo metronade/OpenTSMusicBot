@@ -977,6 +977,7 @@ async function loadSettings() {
   }
   loadCookiesStatus();
   loadChatFeedback();
+  loadDynamicNickname();
   loadTtsEvents();
 }
 
@@ -1048,6 +1049,30 @@ async function loadChatFeedback() {
     });
   } catch (e) { toast('Could not load chat settings: ' + e.message, 'error'); }
 }
+
+// ── Dynamic Nickname ──────────────────────────────────────────────────────────
+async function loadDynamicNickname() {
+  try {
+    const s = await api('GET', '/api/settings/dynamic-nickname');
+    if (s) {
+      $('dyn-nick-enabled').checked = !!s.enabled;
+      $('dyn-nick-base').value = s.base || '';
+    }
+  } catch { /* ignore */ }
+}
+
+$('dyn-nick-save')?.addEventListener('click', async () => {
+  try {
+    await api('POST', '/api/settings/dynamic-nickname', {
+      enabled: $('dyn-nick-enabled').checked,
+      base: $('dyn-nick-base').value.trim(),
+    });
+    const msg = $('dyn-nick-msg');
+    msg.classList.remove('hidden');
+    setTimeout(() => msg.classList.add('hidden'), 2000);
+  } catch (e) { toast(e.message, 'error'); }
+});
+$('dyn-nick-enabled')?.addEventListener('change', () => $('dyn-nick-save').click());
 
 // ── YouTube cookies ───────────────────────────────────────────────────────────
 async function loadCookiesStatus() {

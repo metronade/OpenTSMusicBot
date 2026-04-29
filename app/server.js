@@ -211,6 +211,29 @@ app.post('/api/settings/chat', requireAdmin, (req, res) => {
   res.json(current);
 });
 
+// Dynamic nickname settings
+app.get('/api/settings/dynamic-nickname', requireAdmin, (req, res) => {
+  res.json(db.getSetting('dynamic_nickname'));
+});
+
+app.post('/api/settings/dynamic-nickname', requireAdmin, (req, res) => {
+  const current = db.getSetting('dynamic_nickname');
+  if ('enabled' in req.body) current.enabled = !!req.body.enabled;
+  if (typeof req.body.base === 'string') current.base = req.body.base.trim().slice(0, 30) || config.TS3_NICKNAME;
+  db.setSetting('dynamic_nickname', current);
+  // Apply immediately: revert to base or update if radio is playing
+  if (current.enabled) {
+    const track = audio.getCurrentTrack();
+    if (track?.type === 'radio') {
+      const label = `${current.base} [Radio: ${track.title}]`;
+      ts3query.changeNickname(label.slice(0, 30)).catch(() => {});
+    } else {
+      ts3query.changeNickname(current.base.slice(0, 30)).catch(() => {});
+    }
+  }
+  res.json(current);
+});
+
 // TTS event announcements settings
 app.get('/api/settings/tts-events', requireAdmin, (req, res) => {
   res.json(db.getSetting('tts_events'));
@@ -259,8 +282,23 @@ ts3query.on('connected',    data     => io.emit('bot:connected',    data));
 ts3query.on('disconnected', ()       => io.emit('bot:disconnected'));
 ts3query.on('channels',     channels => io.emit('bot:channels',     channels));
 
-audio.on('playing',  track   => io.emit('bot:playing',  track));
-audio.on('stopped',  ()      => io.emit('bot:stopped'));
+audio.on('playing',  track   => {
+  io.emit('bot:playing', track);
+  // Dynamic nickname: show [Radio: name] when radio is playing
+  const dn = db.getSetting('dynamic_nickname');
+  if (dn?.enabled && track?.type === 'radio') {
+    const label = `${dn.base || config.TS3_NICKNAME} [Radio: ${track.title}]`;
+    ts3query.changeNickname(label.slice(0, 30)).catch(() => {});
+  }
+});
+audio.on('stopped',  ()      => {
+  io.emit('bot:stopped');
+  // Dynamic nickname: revert to base when playback stops
+  const dn = db.getSetting('dynamic_nickname');
+  if (dn?.enabled) {
+    ts3query.changeNickname((dn.base || config.TS3_NICKNAME).slice(0, 30)).catch(() => {});
+  }
+});
 audio.on('volume',   vol     => io.emit('bot:volume',   vol));
 audio.on('error',    err     => io.emit('bot:error',    { message: err.message }));
 audio.on('queue',    queue   => io.emit('bot:queue',    queue));
