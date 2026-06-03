@@ -244,6 +244,8 @@ class AudioManager extends EventEmitter {
   // ── TTS ────────────────────────────────────────────────────────────────────
 
   async say(text, voiceOverride = null, piperOverride = null) {
+    const gen = ++this._generation;
+
     const voiceId   = (voiceOverride && getVoice(voiceOverride)) ? voiceOverride : this._voice;
     const voiceCfg  = getVoice(voiceId);
     if (!voiceCfg) throw new Error(`Unknown voice: ${voiceId}`);
@@ -276,6 +278,11 @@ class AudioManager extends EventEmitter {
         else reject(new Error(`piper exited with code ${code}`));
       });
     });
+
+    if (this._generation !== gen) {
+      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+      return { superseded: true };
+    }
 
     this._stopCurrent();
     this._duration = null;
